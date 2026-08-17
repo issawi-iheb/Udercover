@@ -173,8 +173,6 @@ public struct GameStateMachine: Sendable, Equatable {
 
     // MARK: - Win condition logic
 
-    // MARK: - Win condition logic
-
     private func nextStateAfterElimination(
         role: PlayerRole,
         aliveCivilians: Int,
@@ -187,53 +185,66 @@ public struct GameStateMachine: Sendable, Equatable {
 
         case .mrWhite:
             // Mr. White was eliminated.
-            // He always gets one final chance to guess the civilian word.
+            // He gets one final chance to guess the civilian word.
             return .mrWhiteGuess(round: round)
 
         case .undercover:
 
-            // No Undercover remains.
-            if aliveUndercover == 0 {
-                // If Mr. White is also gone, civilians win.
-                if aliveMrWhite == 0 {
-                    return .results(.civiliansWin)
+                // No Undercover remains.
+                if aliveUndercover == 0 {
+
+                    // Only Civilian + Mr. White remain.
+                    // Mr. White gets the final guess.
+                    if aliveCivilians == 1 && aliveMrWhite == 1 {
+                        return .mrWhiteGuess(round: round)
+                    }
+
+                    // Only Civilians remain.
+                    if aliveCivilians > 0 && aliveMrWhite == 0 {
+                        return .results(.civiliansWin)
+                    }
+
+                    // Civilians + Mr. White remain.
+                    // Continue voting until only one Civilian remains.
+                    return .discussion(round: round + 1)
+                }
+
+                // Only Undercover + Mr. White remain.
+                if aliveCivilians == 0 &&
+                   aliveUndercover == 1 &&
+                   aliveMrWhite == 1 {
+                    return .mrWhiteGuess(round: round)
                 }
 
                 // Mr. White is still alive.
-                // The group can continue and eventually vote him out.
-                return .discussion(round: round + 1)
-            }
+                if aliveMrWhite > 0 {
+                    return .discussion(round: round + 1)
+                }
 
-            // FINAL DUEL:
-            // Only Mr. White and the Undercover remain.
-            //
-            // There is no point in voting between two players.
-            // Mr. White gets the final guess immediately.
-            if aliveCivilians == 0 &&
-               aliveUndercover == 1 &&
+                // Normal Undercover parity rule.
+                if aliveUndercover >= aliveCivilians {
+                    return .results(.undercoverWins)
+                }
+
+                return .discussion(round: round + 1)
+
+        case .civilian:
+
+            // Only Civilian + Mr. White remain.
+            // Go directly to Mr. White's final guess.
+            if aliveCivilians == 1 &&
+               aliveUndercover == 0 &&
                aliveMrWhite == 1 {
                 return .mrWhiteGuess(round: round)
             }
 
-            // Undercover cannot win while Mr. White is still alive.
-            if aliveMrWhite > 0 {
+            // If no Undercover remains but there are still
+            // multiple civilians, continue the game.
+            if aliveUndercover == 0 {
                 return .discussion(round: round + 1)
             }
 
-            // Normal Undercover parity rule.
-            if aliveUndercover >= aliveCivilians {
-                return .results(.undercoverWins)
-            }
-
-            return .discussion(round: round + 1)
-
-        case .civilian:
-
-            // FINAL DUEL:
-            // Civilian has just been eliminated and only
-            // Mr. White + Undercover remain.
-            //
-            // Skip another voting round.
+            // Only Undercover + Mr. White remain.
             if aliveCivilians == 0 &&
                aliveUndercover == 1 &&
                aliveMrWhite == 1 {
@@ -241,17 +252,11 @@ public struct GameStateMachine: Sendable, Equatable {
             }
 
             // Mr. White is still alive.
-            // Undercover does not automatically win yet.
             if aliveMrWhite > 0 {
                 return .discussion(round: round + 1)
             }
 
-            // No Undercover remains.
-            if aliveUndercover == 0 {
-                return .results(.civiliansWin)
-            }
-
-            // Normal Undercover parity rule.
+            // No Mr. White remains.
             if aliveUndercover >= aliveCivilians {
                 return .results(.undercoverWins)
             }

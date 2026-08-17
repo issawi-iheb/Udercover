@@ -8,95 +8,299 @@ import SwiftUI
 public struct DiscussionView: View {
     let round: Int
     @ObservedObject var viewModel: GameViewModel
-    @State private var pulse = false
 
-    private var s: AppStrings { viewModel.selectedLanguage.strings }
+    @State private var appeared = false
+
+    private var s: AppStrings {
+        viewModel.selectedLanguage.strings
+    }
+
+    private var timerProgress: Double {
+        guard Config.discussionTimerSeconds > 0 else {
+            return 0
+        }
+
+        return min(
+            max(
+                Double(viewModel.timeRemaining) /
+                Double(Config.discussionTimerSeconds),
+                0
+            ),
+            1
+        )
+    }
+
     private var timerColor: Color {
-        viewModel.timeRemaining <= 10 ? .accentRed
-            : viewModel.timeRemaining <= 30 ? .accentAmber
-            : .white
+        if viewModel.timeRemaining <= 10 {
+            return .accentRed
+        }
+
+        if viewModel.timeRemaining <= 30 {
+            return .accentAmber
+        }
+
+        return .white
+    }
+
+    private var isUrgent: Bool {
+        viewModel.timeRemaining <= 10
     }
 
     public var body: some View {
         GeometryReader { geo in
             ZStack {
-                Circle().fill(timerColor.opacity(0.07)).frame(width: 480).blur(radius: 100)
-                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
-                    .scaleEffect(pulse ? 1.12 : 1.0)
-                    .animation(
-                        viewModel.timeRemaining <= 10
-                            ? .easeInOut(duration: 0.55).repeatForever(autoreverses: true)
-                            : .default,
-                        value: pulse
-                    )
+                // MARK: Background
+
+                Color.appBackground
+                    .ignoresSafeArea()
+
+                // Central glow
+                RadialGradient.spotlight(
+                    color: timerColor.opacity(isUrgent ? 0.6 : 0.15),
+                    radius: isUrgent ? 320 : 200
+                )
+                .animation(
+                    .easeInOut(duration: 0.8),
+                    value: isUrgent
+                )
+                .allowsHitTesting(false)
 
                 VStack(spacing: 0) {
-                    Spacer(minLength: 16)
 
-                    HStack(spacing: 12) {
-                        RoundBadge(round: round, language: viewModel.selectedLanguage)
-                        DifficultyBadge(difficulty: viewModel.selectedDifficulty)
-                    }.padding(.top, 10)
+                    // MARK: Top bar
 
-                    Spacer(minLength: 12)
+                    HStack(spacing: 10) {
+                        RoundBadge(
+                            round: round,
+                            language: viewModel.selectedLanguage
+                        )
 
-                    VStack(spacing: adaptiveSpacing) {
-                        Text(s.discussAndDeduce)
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color.white.opacity(0.30))
-                            .tracking(viewModel.selectedLanguage.isRTL ? 0 : 3)
-                            .multilineTextAlignment(.center)
+                        DifficultyBadge(
+                            difficulty: viewModel.selectedDifficulty
+                        )
 
-                        Text("\(viewModel.timeRemaining)")
-                            .font(.system(size: adaptiveTimerSize, weight: .black, design: .rounded))
-                            .foregroundStyle(timerColor).monospacedDigit()
-                            .shadow(color: timerColor.opacity(0.4), radius: 24)
-                            .scaleEffect(viewModel.timeRemaining <= 10 && pulse ? 1.06 : 1.0)
-                            .animation(.easeInOut, value: viewModel.timeRemaining)
+                        Spacer()
+                    }
+                    .padding(.horizontal, Space.pagePadding)
+                    .padding(
+                        .top, 20)
+                    .opacity(appeared ? 1 : 0)
+                    .animation(
+                        .appSpring.delay(0.1),
+                        value: appeared
+                    )
 
-                        Text(s.seconds)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.30))
+                    Spacer()
+
+                    // MARK: Circular timer
+
+                    ZStack {
+                        ArcTimer(
+                            progress: timerProgress,
+                            color: timerColor,
+                            timeString: "\(viewModel.timeRemaining)"
+                        )
+                        .frame(
+                            width: ScreenSize.circleSize(for: geo.size.width),
+                            height: ScreenSize.circleSize(for: geo.size.width)
+                        )
+                        // Only show the pulse when urgent.
+                        if isUrgent {
+                            PulsingRing(
+                                color: .accentRed,
+                                size: 230
+                            )
+                            .allowsHitTesting(false)
+                        }
+                    }
+                    .scaleEffect(appeared ? 1 : 0.8)
+                    .opacity(appeared ? 1 : 0)
+                    .animation(
+                        .appDramatic.delay(0.15),
+                        value: appeared
+                    )
+
+                    Text(s.seconds)
+                        .font(AppFont.label(size: 12))
+                        .foregroundStyle(
+                            timerColor.opacity(0.5)
+                        )
+                        .padding(.top, 6)
+                        .opacity(appeared ? 1 : 0)
+                        .animation(
+                            .appSpring.delay(0.2),
+                            value: appeared
+                        )
+
+                    Spacer()
+
+                    // MARK: Player status
+
+                    playerChips
+                        .padding(.horizontal, Space.pagePadding)
+                        .padding(.bottom, Space.lg)
+                        .opacity(appeared ? 1 : 0)
+                        .animation(
+                            .appSpring.delay(0.25),
+                            value: appeared
+                        )
+
+                    // MARK: Hint
+
+                    if round == 1 {
+                        hintCard
+                            .padding(.horizontal, Space.pagePadding)
+                            .padding(.bottom, Space.md)
+                            .transition(
+                                .move(edge: .bottom)
+                                .combined(with: .opacity)
+                            )
                     }
 
-                    Spacer(minLength: 12)
-
-                    hintCard.padding(.horizontal, 28).padding(.bottom, 12)
+                    // MARK: Vote button
 
                     Button {
                         Haptic.heavy()
                         viewModel.enterVoting()
                     } label: {
-                        Label(s.startVotingNow, systemImage: "checkmark.circle.fill")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .tracking(viewModel.selectedLanguage.isRTL ? 0 : 1)
-                            .foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 17)
-                            .background(LinearGradient.brandGlow)
-                            .clipShape(RoundedRectangle(cornerRadius: 16)).glow(color: .brandPurple)
+                        Label(
+                            s.startVotingNow,
+                            systemImage: "checkmark.circle.fill"
+                        )
+                        .font(AppFont.button())
+                        .tracking(
+                            viewModel.selectedLanguage.isRTL
+                            ? 0
+                            : 1
+                        )
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 18)
+                        .background(
+                            LinearGradient.brandGlow
+                        )
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: Radius.md
+                            )
+                        )
+                        .glow(color: .brandPurple)
                     }
-                    .padding(.horizontal, 28).padding(.bottom, geo.safeAreaInsets.bottom + 16)
+                    .padding(.horizontal, Space.pagePadding)
+                    .padding(
+                        .bottom,
+                        geo.safeAreaInsets.bottom + Space.md
+                    )
+                    .opacity(appeared ? 1 : 0)
+                    .animation(
+                        .appSpring.delay(0.3),
+                        value: appeared
+                    )
                 }
-                .frame(width: geo.size.width, height: geo.size.height)
             }
         }
-        .onAppear { pulse = true }
-        .environment(\.layoutDirection, viewModel.selectedLanguage.layoutDirection)
+        .onAppear {
+            withAnimation(.appDramatic) {
+                appeared = true
+            }
+        }
+        .environment(
+            \.layoutDirection,
+            viewModel.selectedLanguage.layoutDirection
+        )
     }
+
+    // MARK: - Player chips
+
+    private var playerChips: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("PLAYERS")
+                .font(AppFont.label(size: 10))
+                .foregroundStyle(
+                    Color.white.opacity(0.3)
+                )
+                .tracking(2)
+
+            ScrollView(
+                .horizontal,
+                showsIndicators: false
+            ) {
+                HStack(spacing: 8) {
+                    ForEach(
+                        Array(
+                            viewModel.players.enumerated()
+                        ),
+                        id: \.element.id
+                    ) { idx, player in
+
+                        VStack(spacing: 4) {
+                            PlayerChip(
+                                player: player,
+                                index: idx,
+                                isAlive: !player.isEliminated
+                            )
+
+                            Text(
+                                String(
+                                    player.name.prefix(5)
+                                )
+                            )
+                            .font(
+                                AppFont.body(
+                                    size: 9,
+                                    weight: .medium
+                                )
+                            )
+                            .foregroundStyle(
+                                player.isEliminated
+                                ? Color.white.opacity(0.2)
+                                : Color.white.opacity(0.55)
+                            )
+                            .lineLimit(1)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(Space.md)
+        .glassCard()
+    }
+
+    // MARK: - Hint card
 
     private var hintCard: some View {
         HStack(spacing: 14) {
-            Image(systemName: "person.fill.questionmark").font(.system(size: 22)).foregroundStyle(Color.brandPurple)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(s.findUndercover)
-                    .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                Text(s.discussClues)
-                    .font(.system(size: 13)).foregroundStyle(Color.white.opacity(0.45))
+            Image(systemName: "person.fill.questionmark")
+                .font(.system(size: 20))
+                .foregroundStyle(Color.brandPurple)
+
+            VStack(
+                alignment: .leading,
+                spacing: 3
+            ) {
+                Text(
+                    viewModel.selectedLanguage.strings.findUndercover
+                )
+                .font(
+                    AppFont.body(
+                        size: 14,
+                        weight: .semibold
+                    )
+                )
+                .foregroundStyle(.white)
+
+                Text(
+                    viewModel.selectedLanguage.strings.discussClues
+                )
+                .font(AppFont.body(size: 12))
+                .foregroundStyle(
+                    Color.white.opacity(0.4)
+                )
             }
+
             Spacer()
         }
-        .padding(16).glassCard()
+        .padding(Space.md)
+        .glassCard()
     }
-
-    private var adaptiveTimerSize: CGFloat { UIScreen.main.bounds.height < 700 ? 82 : 108 }
-    private var adaptiveSpacing:   CGFloat { UIScreen.main.bounds.height < 700 ? 10 : 14 }
 }

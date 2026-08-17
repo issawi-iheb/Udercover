@@ -6,3 +6,18 @@
 //
 
 import Foundation
+
+public protocol TopicProvider: Sendable {
+
+    func topics() async -> [String]
+
+}
+
+public actor LocalTopicProvider: TopicProvider {
+
+    private let repository = WordRepository()
+
+    public func topics() async -> [String] {
+        repository.topics
+    }
+}

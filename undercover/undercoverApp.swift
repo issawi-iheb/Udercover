@@ -9,10 +9,31 @@ import SwiftUI
 
 @main
 struct undercoverApp: App {
+
+    @StateObject private var appState = AppState()
+
     var body: some Scene {
+
         WindowGroup {
-            NavigationStack {
-                HomeView()
+
+            Group {
+
+                if appState.isReady {
+
+                    NavigationStack {
+                        HomeView()
+                    }
+
+                } else {
+
+                    LoadingView()
+
+                }
+
+            }
+            .environmentObject(appState)
+            .task {
+                await appState.bootstrap()
             }
         }
     }

@@ -5,7 +5,6 @@
 //  Single switch on gameState drives all screen routing.
 //  No phase logic lives anywhere else.
 //
-
 import SwiftUI
 
 public struct GameRootView: View {
@@ -14,13 +13,14 @@ public struct GameRootView: View {
 
     public var body: some View {
         ZStack {
-            LinearGradient.brandBackground.ignoresSafeArea()
+            Color.appBackground.ignoresSafeArea()
 
             Group {
                 switch viewModel.gameState {
 
                 case .setup, .loadingWords:
                     loadingScreen
+                        .transition(.opacity)
 
                 case .reveal:
                     if let player = viewModel.currentRevealingPlayer() {
@@ -35,45 +35,52 @@ public struct GameRootView: View {
                             onReveal:     { viewModel.revealTapped() },
                             onNext:       { viewModel.revealNext() }
                         )
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .trailing).combined(with: .opacity),
-                            removal:   .move(edge: .leading).combined(with: .opacity)
-                        ))
+                        .transition(.cardSlide)
                     }
 
                 case .discussion(let round):
                     DiscussionView(round: round, viewModel: viewModel)
-                        .transition(.opacity)
-                        .onAppear { viewModel.startDiscussionTimer(seconds: 60) }
+                        .transition(.doorOpen)
+                        .onAppear { viewModel.startDiscussionTimer(seconds: Config.discussionTimerSeconds) }
 
                 case .voting:
                     VotingView(viewModel: viewModel)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .transition(.gavelDown)
 
                 case .mrWhiteGuess:
                     MrWhiteGuessView(viewModel: viewModel)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .transition(.mrWhiteEntrance)
 
                 case .results(let result):
                     ResultsView(
                         result:    result,
                         viewModel: viewModel,
                         onReplay:  { Task { await viewModel.replay() } },
-                        onNewGame: { viewModel.newGame(); dismiss() }
+                        onNewGame: {
+                            viewModel.newGame()
+                            dismiss()
+                        }
                     )
-                    .transition(.opacity)
+                    .transition(.verdict)
                 }
             }
-            .animation(.spring(response: 0.42, dampingFraction: 0.82), value: viewModel.gameState)
+            .animation(.appSpring, value: viewModel.gameState)
         }
     }
 
+    // MARK: - Loading screen
+
     private var loadingScreen: some View {
-        VStack(spacing: 20) {
-            ProgressView().scaleEffect(1.4).tint(Color.brandPurple)
-            Text("Generating words…")
-                .font(.system(size: 15, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.5))
+        VStack(spacing: Space.lg) {
+            ZStack {
+                PulsingRing(color: .brandPurple, size: 80)
+                ProgressView()
+                    .scaleEffect(1.4)
+                    .tint(Color.brandPurple)
+            }
+            Text("Finding words…")
+                .font(AppFont.body(size: 15, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.45))
         }
     }
 }

@@ -68,24 +68,6 @@ public struct GameEngine: Sendable {
     }
 
     // MARK: - Win Condition
-
-    /// Counts alive civilians and opponents to feed into the FSM.
-//    public func evaluateBoard(
-//        alivePlayers:  [Player],
-//        rolesByPlayer: [UUID: PlayerRole]
-//    ) -> (aliveCivilians: Int, aliveOpponents: Int) {
-//        var civilians = 0
-//        var opponents = 0
-//        for player in alivePlayers {
-//            switch rolesByPlayer[player.id] {
-//            case .civilian:   civilians += 1
-//            case .undercover: opponents += 1
-//            case .mrWhite:    opponents += 1
-//            case nil:         break
-//            }
-//        }
-//        return (civilians, opponents)
-//    }
     
     public func evaluateBoard(
         alivePlayers: [Player],

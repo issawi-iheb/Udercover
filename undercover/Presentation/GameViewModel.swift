@@ -14,13 +14,13 @@ import Combine
 
 // MARK: - Haptics
 
-enum Haptic {
-    static func light()   { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-    static func medium()  { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
-    static func heavy()   { UIImpactFeedbackGenerator(style: .heavy).impactOccurred() }
-    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    static func error()   { UINotificationFeedbackGenerator().notificationOccurred(.error) }
-}
+//enum Haptic {
+//    static func light()   { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+//    static func medium()  { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+//    static func heavy()   { UIImpactFeedbackGenerator(style: .heavy).impactOccurred() }
+//    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+//    static func error()   { UINotificationFeedbackGenerator().notificationOccurred(.error) }
+//}
 
 // MARK: - ViewModel
 
@@ -65,21 +65,20 @@ public final class GameViewModel: ObservableObject {
     // MARK: Private infrastructure
     private var fsm        = GameStateMachine()
     private let engine     = GameEngine()
-    private let repository = WordRepository()
+    private let topicService = TopicService()
     private let pairStore  = PlayedPairStore()
     private var timer:       Timer?
 
     // Lazy so cache persists across rounds within a session.
     private lazy var generatorService = WordGeneratorService(generators: [
         FoundationModelsWordGenerator(),
-        AnthropicWordGenerator(),
-        OpenAIWordGenerator(),
         LocalWordGenerator()
     ])
 
     // MARK: - Derived
 
-    public var availableTopics: [String]  { repository.topics }
+    @Published
+    public var availableTopics:[GameTopic] = []
     public var alivePlayers:    [Player]  { players.filter { !$0.isEliminated } }
     public var mrWhiteEnabled:  Bool      { mrWhiteModeEnabled && players.count >= 4 }
 
@@ -134,6 +133,12 @@ public final class GameViewModel: ObservableObject {
     }
 
     // MARK: - Game lifecycle
+    
+    public func loadTopics() async {
+
+        availableTopics = await topicService.topics()
+
+    }
 
     public func startGame(keepPlayers: Bool = false) async {
         guard players.count >= 3 else { return }

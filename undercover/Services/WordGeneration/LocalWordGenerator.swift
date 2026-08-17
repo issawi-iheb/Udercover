@@ -26,14 +26,14 @@ public actor LocalWordGenerator: WordGeneratorProtocol {
     ) async throws -> WordPair {
 
         // 1. Exact difficulty match from repository.
-        if let pair = repository.randomPair(topic: topic, language: language,
+        if let pair = await repository.randomPair(topic: topic, language: language,
                                             difficulty: difficulty, excluding: excluding) {
             return pair
         }
 
         // 2. Relax difficulty — try other bands.
         for relaxed in PairDifficulty.allCases where relaxed != difficulty {
-            if let pair = repository.randomPair(topic: topic, language: language,
+            if let pair = await repository.randomPair(topic: topic, language: language,
                                                 difficulty: relaxed, excluding: excluding) {
                 return pair
             }

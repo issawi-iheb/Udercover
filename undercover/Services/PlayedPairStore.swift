@@ -49,7 +49,7 @@ public final class PlayedPairStore: Sendable {
         await withCheckedContinuation { continuation in
             Task.detached {
                 let context    = ModelContext(self.container)
-                let descriptor = self.descriptor(for: topic)
+                let descriptor = await self.descriptor(for: topic)
                 let records    = (try? context.fetch(descriptor)) ?? []
                 continuation.resume(returning: Set(records.map(\.trackingKey)))
             }
@@ -79,7 +79,7 @@ public final class PlayedPairStore: Sendable {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             Task.detached {
                 let context = ModelContext(self.container)
-                let records = (try? context.fetch(self.descriptor(for: topic))) ?? []
+                let records = await (try? context.fetch(self.descriptor(for: topic))) ?? []
                 records.forEach { context.delete($0) }
                 try? context.save()
                 continuation.resume()

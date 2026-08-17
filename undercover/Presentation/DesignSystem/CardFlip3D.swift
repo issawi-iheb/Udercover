@@ -46,87 +46,81 @@ struct CardFlip3D<Front: View, Back: View>: View {
 
 /// A button that requires the user to hold for `duration` seconds.
 /// Shows a radial progress ring while held.
-struct HoldToConfirmButton: View {
-    let label:    String
-    let icon:     String
-    let duration: Double       // seconds to hold
-    let color:    Color
-    let action:   () -> Void
+ struct HoldToConfirmButton: View {
+    let label: String
+    let icon: String
+    let duration: TimeInterval
+    let color: Color
+    let action: () -> Void
 
-    @State private var progress:  Double  = 0
-    @State private var isHolding: Bool    = false
-    @State private var timer:     Timer?
+    @State private var progress: CGFloat = 0
+    @State private var completed = false
 
     var body: some View {
-        ZStack {
-            // Background fill
-            RoundedRectangle(cornerRadius: Radius.md)
-                .fill(color.opacity(0.15))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md)
-                        .strokeBorder(color.opacity(0.35), lineWidth: 1)
-                )
+        VStack(spacing: 8) {
 
-            // Progress ring
-            RoundedRectangle(cornerRadius: Radius.md)
-                .trim(from: 0, to: progress)
-                .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .animation(.linear(duration: 0.05), value: progress)
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md)
+                    .fill(Color.appSurface2)
 
-            // Label
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 15, weight: .bold))
-                Text(label)
-                    .font(AppFont.button())
-                    .tracking(1)
+                RoundedRectangle(cornerRadius: Radius.md)
+                    .strokeBorder(
+                        Color.white.opacity(0.08),
+                        lineWidth: 1
+                    )
+
+                HStack(spacing: 10) {
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .bold))
+
+                    Text(label)
+                        .font(AppFont.button(size: 15))
+                        .tracking(1.2)
+                }
+                .foregroundStyle(.white)
             }
-            .foregroundStyle(isHolding ? color : .white)
+            .frame(height: 56)
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.06))
+
+                    Capsule()
+                        .fill(color)
+                        .frame(
+                            width: geo.size.width * progress
+                        )
+                }
+            }
+            .frame(height: 3)
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 56)
-        .scaleEffect(isHolding ? 0.97 : 1.0)
-        .animation(.appSnap, value: isHolding)
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in startHolding() }
-                .onEnded   { _ in cancelHolding() }
-        )
-    }
+        .contentShape(Rectangle())
+        .onLongPressGesture(
+            minimumDuration: duration,
+            maximumDistance: 50,
+            pressing: { pressing in
 
-    private func startHolding() {
-        guard !isHolding else { return }
-        isHolding = true
-        progress  = 0
-        Haptic.holdPulse()
+                guard !completed else { return }
 
-        let interval = 0.05
-        let steps    = duration / interval
+                if pressing {
+                    withAnimation(.linear(duration: duration)) {
+                        progress = 1
+                    }
+                } else {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        progress = 0
+                    }
+                }
+            },
+            perform: {
+                guard !completed else { return }
 
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { t in
-            progress += 1.0 / steps
-            if progress >= 0.33 { Haptic.holdPulse() ; /* sparse */ }
-            if progress >= 1.0 {
-                t.invalidate()
-                Haptic.cardFlip()
+                completed = true
+                progress = 1
+
                 action()
-                reset()
             }
-        }
-    }
-
-    private func cancelHolding() {
-        timer?.invalidate()
-        timer = nil
-        withAnimation(.appSnap) {
-            isHolding = false
-            progress  = 0
-        }
-    }
-
-    private func reset() {
-        isHolding = false
-        progress  = 0
+        )
     }
 }
