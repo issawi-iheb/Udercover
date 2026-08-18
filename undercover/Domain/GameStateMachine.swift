@@ -182,86 +182,134 @@ public struct GameStateMachine: Sendable, Equatable {
     ) -> GameState {
 
         switch role {
-
         case .mrWhite:
             // Mr. White was eliminated.
-            // He gets one final chance to guess the civilian word.
-            return .mrWhiteGuess(round: round)
+            // He gets one final chance to guess the civilian word ONLY
+            // when eliminated from Civilian+MrWhite or Undercover+MrWhite.
+//            if isOnlyCivilianAndMrWhiteRemaining(
+//                aliveCivilians, aliveUndercover, aliveMrWhite
+//            ) || isOnlyUndercoverAndMrWhiteRemaining(
+//                aliveCivilians, aliveUndercover, aliveMrWhite
+//            ) {
+//                return .mrWhiteGuess(round: round)
+//            }
+//            // Otherwise, continue normally (shouldn't happen in practice
+//            // but keeping for completeness)
+//            return .discussion(round: round + 1)
+                return .mrWhiteGuess(round: round)
 
         case .undercover:
-
-                // No Undercover remains.
-                if aliveUndercover == 0 {
-
-                    // Only Civilian + Mr. White remain.
-                    // Mr. White gets the final guess.
-                    if aliveCivilians == 1 && aliveMrWhite == 1 {
-                        return .mrWhiteGuess(round: round)
-                    }
-
-                    // Only Civilians remain.
-                    if aliveCivilians > 0 && aliveMrWhite == 0 {
-                        return .results(.civiliansWin)
-                    }
-
-                    // Civilians + Mr. White remain.
-                    // Continue voting until only one Civilian remains.
-                    return .discussion(round: round + 1)
-                }
-
-                // Only Undercover + Mr. White remain.
-                if aliveCivilians == 0 &&
-                   aliveUndercover == 1 &&
-                   aliveMrWhite == 1 {
+            // Handle eliminated Undercover player
+            if aliveUndercover == 0 {
+                // No Undercover remains
+                if isOnlyCivilianAndMrWhiteRemaining(
+                    aliveCivilians, aliveUndercover, aliveMrWhite
+                ) {
+                    // Only Civilian + Mr. White remain
                     return .mrWhiteGuess(round: round)
                 }
-
-                // Mr. White is still alive.
-                if aliveMrWhite > 0 {
-                    return .discussion(round: round + 1)
+                if isOnlyCivililiansRemaining(
+                    aliveCivilians, aliveUndercover, aliveMrWhite
+                ) {
+                    // Only Civilians remain
+                    return .results(.civiliansWin)
                 }
-
-                // Normal Undercover parity rule.
-                if aliveUndercover >= aliveCivilians {
-                    return .results(.undercoverWins)
-                }
-
-                return .discussion(round: round + 1)
-
-        case .civilian:
-
-            // Only Civilian + Mr. White remain.
-            // Go directly to Mr. White's final guess.
-            if aliveCivilians == 1 &&
-               aliveUndercover == 0 &&
-               aliveMrWhite == 1 {
-                return .mrWhiteGuess(round: round)
-            }
-
-            // If no Undercover remains but there are still
-            // multiple civilians, continue the game.
-            if aliveUndercover == 0 {
+                // Civilians + Mr. White remain
                 return .discussion(round: round + 1)
             }
 
-            // Only Undercover + Mr. White remain.
-            if aliveCivilians == 0 &&
-               aliveUndercover == 1 &&
-               aliveMrWhite == 1 {
+            // Undercover still alive, check for Undercover + Mr. White only
+            if isOnlyUndercoverAndMrWhiteRemaining(
+                aliveCivilians, aliveUndercover, aliveMrWhite
+            ) {
                 return .mrWhiteGuess(round: round)
             }
 
-            // Mr. White is still alive.
+            // Mr. White is still alive
             if aliveMrWhite > 0 {
                 return .discussion(round: round + 1)
             }
 
-            // No Mr. White remains.
-            if aliveUndercover >= aliveCivilians {
+            // Normal Undercover win condition (parity or majority)
+            if shouldUndercoverWin(aliveCivilians, aliveUndercover, aliveMrWhite) {
                 return .results(.undercoverWins)
             }
 
+            // Continue to next round
+            return .discussion(round: round + 1)
+
+        case .civilian:
+            // Handle eliminated Civilian player
+            // Check special role combinations first
+            if isOnlyCivilianAndMrWhiteRemaining(
+                aliveCivilians, aliveUndercover, aliveMrWhite
+            ) {
+                return .mrWhiteGuess(round: round)
+            }
+            if isOnlyUndercoverAndMrWhiteRemaining(
+                aliveCivilians, aliveUndercover, aliveMrWhite
+            ) {
+                return .mrWhiteGuess(round: round)
+            }
+
+            // If no Undercover remains
+            if aliveUndercover == 0 {
+                if isOnlyCivililiansRemaining(
+                    aliveCivilians, aliveUndercover, aliveMrWhite
+                ) {
+                    return .results(.civiliansWin)
+                }
+                // Only Civilians + Mr. White remain (already handled above)
+                // Or multiple Civilians remain
+                return .discussion(round: round + 1)
+            }
+
+            // Mr. White is still alive
+            if aliveMrWhite > 0 {
+                return .discussion(round: round + 1)
+            }
+
+            // No Mr. White remains - check for Undercover win
+            if shouldUndercoverWin(aliveCivilians, aliveUndercover, aliveMrWhite) {
+                return .results(.undercoverWins)
+            }
+
+            // Continue to next round
             return .discussion(round: round + 1)
         }
+    }
+
+    // MARK: - Win Condition Helpers
+
+    private func isOnlyCivililiansRemaining(
+        _ civilians: Int,
+        _ undercover: Int,
+        _ mrWhite: Int
+    ) -> Bool {
+        civilians >= 2 && undercover == 0 && mrWhite == 0
+    }
+
+    private func isOnlyCivilianAndMrWhiteRemaining(
+        _ civilians: Int,
+        _ undercover: Int,
+        _ mrWhite: Int
+    ) -> Bool {
+        civilians == 1 && undercover == 0 && mrWhite == 1
+    }
+
+    private func isOnlyUndercoverAndMrWhiteRemaining(
+        _ civilians: Int,
+        _ undercover: Int,
+        _ mrWhite: Int
+    ) -> Bool {
+        civilians == 0 && undercover == 1 && mrWhite == 1
+    }
+
+    private func shouldUndercoverWin(
+        _ civilians: Int,
+        _ undercover: Int,
+        _ mrWhite: Int
+    ) -> Bool {
+        mrWhite == 0 && undercover >= civilians
     }
 }
