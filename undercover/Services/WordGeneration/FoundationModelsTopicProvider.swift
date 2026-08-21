@@ -11,87 +11,165 @@ import Foundation
 import FoundationModels
 #endif
 
-
 public actor FoundationModelsTopicProvider: TopicProvider {
-    
+
     public init() {}
-    
-    private func cleanJSON(_ text: String) -> String {
 
-        var clean = text
-            .replacingOccurrences(of: "```json", with: "")
-            .replacingOccurrences(of: "```", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    private var cachedTopics: [String]?
 
-        if let start = clean.firstIndex(of: "["),
-           let end = clean.lastIndex(of: "]") {
+    // MARK: - Public API
 
-            clean = String(clean[start...end])
-        }
-
-        return clean
-    }
     public func topics() async -> [String] {
+
+        // Return cached topics if already generated.
+        if let cachedTopics, !cachedTopics.isEmpty {
+            return cachedTopics
+        }
 
         #if canImport(FoundationModels)
 
         if #available(iOS 26.0, *) {
 
             let session = LanguageModelSession(
-                instructions: """
-You generate game topics for a party game.
-
-Return ONLY a JSON array.
-
-No markdown.
-No code block.
-No explanation.
-
-Example:
-
-[
-"Movies",
-"Anime",
-"Football",
-"Technology"
-]
-
-Generate 20 popular topics.
-"""
+                instructions: Self.systemPrompt
             )
 
             do {
-
                 let response = try await session.respond(
-                    to: "Generate 30 premium game topics."
+                    to: "Generate exactly 30 premium game topics."
                 )
 
-                let json = cleanJSON(response.content)
+                let json = Self.cleanJSON(response.content)
 
                 guard let data = json.data(using: .utf8) else {
-                    return []
+                    return Self.fallbackTopics
                 }
 
-                return try JSONDecoder().decode(
+                let generatedTopics = try JSONDecoder().decode(
                     [String].self,
                     from: data
                 )
 
+                let cleanedTopics = generatedTopics
+                    .map {
+                        $0.trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        )
+                    }
+                    .filter { !$0.isEmpty }
+
+                guard !cleanedTopics.isEmpty else {
+                    return Self.fallbackTopics
+                }
+
+                self.cachedTopics = cleanedTopics
+
+                return cleanedTopics
+
             } catch {
-                print(error)
+                print(
+                    "[FoundationModelsTopicProvider] Generation failed:",
+                    error
+                )
+
+                return Self.fallbackTopics
             }
         }
 
         #endif
 
-
-        return [
-            "Movies",
-            "Anime",
-            "Football",
-            "Technology",
-            "Music",
-            "Animals"
-        ]
+        return Self.fallbackTopics
     }
+
+    // MARK: - System Prompt
+
+    private nonisolated static let systemPrompt = """
+    You generate topics for a party game called "Undercover".
+
+    A topic defines the universe from which word pairs will be generated.
+
+    Generate exactly 30 diverse topics.
+
+    TOPIC REQUIREMENTS:
+    - Recognizable to average players.
+    - Broad enough to contain many possible concepts.
+    - Suitable for generating interesting Undercover word pairs.
+    - Diverse across entertainment, culture, everyday life, science, sports, places, and objects.
+    - Avoid extremely niche subjects.
+    - Avoid topics that are too narrow to generate many pairs.
+    - Avoid duplicate or nearly identical topics.
+
+    GOOD EXAMPLES:
+    Movies
+    Anime
+    Football
+    Technology
+    Music
+    Animals
+    Food
+    Countries
+    Cities
+    Brands
+    Video Games
+    Books
+    History
+
+    OUTPUT:
+    Return ONLY a valid JSON array containing exactly 30 strings.
+
+    Example:
+    ["Movies", "Anime", "Football", "Technology", "Music", "Animals"]
+    """
+
+    // MARK: - JSON Cleaning
+
+    private nonisolated static func cleanJSON(_ text: String) -> String {
+
+        var clean = text
+            .replacingOccurrences(of: "```json", with: "")
+            .replacingOccurrences(of: "```", with: "")
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+
+        guard
+            let start = clean.firstIndex(of: "["),
+            let end = clean.lastIndex(of: "]"),
+            start <= end
+        else {
+            return clean
+        }
+
+        return String(clean[start...end])
+    }
+
+    // MARK: - Fallback
+
+    private nonisolated static let fallbackTopics = [
+        "Movies",
+        "Anime",
+        "Television",
+        "Football",
+        "Basketball",
+        "Technology",
+        "Music",
+        "Animals",
+        "Food",
+        "Countries",
+        "Cities",
+        "Brands",
+        "Video Games",
+        "Books",
+        "History",
+        "Celebrities",
+        "Sports Teams",
+        "Mythology",
+        "Fashion",
+        "Architecture",
+        "Cartoons",
+        "Art",
+        "Science",
+        "Comedy",
+        "Cars"
+    ]
 }

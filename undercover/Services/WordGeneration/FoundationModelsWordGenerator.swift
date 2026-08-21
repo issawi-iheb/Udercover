@@ -3,6 +3,7 @@
 //  undercoverApp
 //
 //  Uses Apple's on-device FoundationModels (iOS 26+, Apple Intelligence).
+//  Optimized for token efficiency and lightweight Swift-side filtering.
 //
 
 import Foundation
@@ -12,864 +13,526 @@ import FoundationModels
 #endif
 
 public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
-
+    
     public let generatorName = "Apple Intelligence (On-Device)"
-
+    
     private var cache: [String: [WordPair]] = [:]
-
+    
+    // MARK: - System Prompt
+    
+    private nonisolated static let baseSystemPrompt = """
+    You generate word pairs for "Undercover", a social-deduction game.
+    
+    GAMEPLAY GOAL:
+    The game is fun when players hesitate over their clues.
+    
+    Generate two DIFFERENT concepts where at least 3 natural clues can honestly describe BOTH.
+    
+    Imagine a player has concept A and wants to give a clue that:
+    1. proves they know A
+    2. but could ALSO honestly describe concept B
+    
+    A strong pair creates this hesitation multiple times.
+    
+    EXAMPLE:
+    Batman / Sherlock Holmes
+    
+    Possible shared clues:
+    - detective
+    - mysterious
+    - intelligent
+    - iconic
+    - dark
+    - crime-fighting
+    
+    Both concepts are distinct, but their clue spaces overlap.
+    
+    THE CLUE TEST — MOST IMPORTANT:
+    Before accepting a pair, mentally test at least 3 realistic clues.
+    
+    For every clue ask:
+    "Would a normal player honestly use this clue for BOTH concepts?"
+    
+    If 3+ clues naturally fit both → ACCEPT.
+    
+    If the overlap depends on trivia, technical knowledge,
+    obscure fandom knowledge, or a forced interpretation → REJECT.
+    
+    Meaningful shared clues can come from:
+    - identity
+    - personality
+    - role
+    - appearance
+    - behavior
+    - reputation
+    - symbolism
+    - cultural meaning
+    - emotional association
+    - environment
+    - archetype
+    
+    DO NOT COUNT THESE AS MEANINGFUL OVERLAP:
+    - same actor
+    - same voice actor
+    - same creator
+    - same author
+    - same director
+    - same studio
+    - same company
+    - same release year
+    - same country
+    - same production team
+    - same genre alone
+    - both belonging to a broad category
+    - obscure trivia
+    
+    IDENTITY CONTAINMENT RULE:
+    The two concepts must be genuinely separate entities.
+    
+    NEVER pair a concept with something that is part of it.
+    
+    REJECT:
+    - Batman / Bruce Wayne
+    - Game of Thrones / Jon Snow
+    - Apple / iPhone
+    - Sherlock Holmes / BBC Sherlock
+    - Star Wars / Darth Vader
+    - Pokémon / Pikachu
+    - Harry Potter / Hogwarts
+    - Marvel / Spider-Man
+    
+    ALSO REJECT:
+    - original / sequel
+    - original / remake
+    - series / episode
+    - franchise / spin-off
+    - franchise / character
+    - universe / character
+    - book / character
+    - movie / character
+    - game / character
+    - category / individual member
+    - parent brand / simple product instance
+    
+    GOOD:
+    - Batman / Sherlock Holmes
+    - Sherlock Holmes / Hercule Poirot
+    - Game of Thrones / The Witcher
+    - Apple / Microsoft
+    - Coca-Cola / Pepsi
+    
+    CONCEPT LEVEL:
+    Both concepts should normally exist at the same conceptual level.
+    
+    VALID:
+    - character ↔ character
+    - movie ↔ movie
+    - series ↔ series
+    - franchise ↔ franchise
+    - brand ↔ brand
+    - city ↔ city
+    - country ↔ country
+    - animal ↔ animal
+    - food ↔ food
+    - athlete ↔ athlete
+    - team ↔ team
+    - product ↔ product
+    
+    INVALID:
+    - series ↔ character
+    - franchise ↔ character
+    - brand ↔ product
+    - movie ↔ character
+    - universe ↔ character
+    - category ↔ individual member
+    - book ↔ character
+    - game ↔ character
+    
+    If a strong pair cannot be found at the same conceptual level,
+    REJECT the candidate instead of relaxing this rule.
+    
+    TOPIC:
+    Both concepts must directly belong to the requested topic.
+    
+    Interpret the topic according to its natural meaning.
+    
+    Examples:
+    
+    Anime:
+    - anime characters
+    - anime series
+    - anime films
+    
+    Movies:
+    - films
+    - movie characters only if the topic explicitly allows characters
+    
+    Brands:
+    - brands
+    
+    Football:
+    - football players
+    - football teams
+    - football competitions
+    - football concepts
+    
+    Food:
+    - foods
+    - dishes
+    - ingredients
+    
+    Cars:
+    - car brands
+    - car models
+    
+    Mythology:
+    - gods
+    - heroes
+    - creatures
+    - mythological figures
+    
+    Do NOT drift into games, merchandise, actors, creators,
+    companies, locations, or adjacent concepts unless they clearly
+    belong directly to the requested topic.
+    
+    RELATIONSHIP:
+    The relationship should explain WHY the pair creates useful
+    overlapping clues.
+    
+    Good relationship types include:
+    - shared archetype
+    - similar role
+    - iconic rivals
+    - competing brands
+    - similar personality
+    - symbolic parallels
+    - similar cultural image
+    - similar emotional experience
+    - similar environment
+    - contrasting versions of the same archetype
+    - shared reputation
+    - shared behavior
+    - shared symbolism
+    
+    The relationship must be useful for gameplay.
+    
+    Do NOT use relationships based only on:
+    - same actor
+    - same creator
+    - same studio
+    - same release year
+    - same franchise
+    - obscure trivia
+    - technical metadata
+    
+    DIVERSITY:
+    Generate 10 different pairs.
+    
+    Avoid repeatedly using the same concept.
+    
+    Avoid repeatedly using the same relationship pattern.
+    
+    Vary the clue space and relationship type across the 10 pairs.
+    
+    Do not generate ten pairs that are all essentially the same relationship.
+    
+    RECOGNIZABILITY:
+    Prefer concepts known by average players.
+    
+    Avoid:
+    - obscure characters
+    - minor fictional characters
+    - niche references
+    - technical terminology
+    - deep fandom knowledge
+    - extremely regional references
+    
+    DIFFICULTY:
+    
+    easy:
+    Obvious shared clues.
+    Players quickly understand why both concepts fit.
+    
+    medium:
+    Several natural shared clues.
+    Players need some discussion to decide which word is theirs.
+    
+    hard:
+    Subtle psychological, symbolic, cultural, emotional,
+    or archetypal overlap.
+    
+    HARD does NOT mean:
+    - obscure
+    - extremely niche
+    - synonyms
+    - almost identical concepts
+    - same franchise
+    - same entity
+    - direct translations
+    
+    HARD means:
+    The concepts are clearly different, but their deeper
+    characteristics create unexpected clue overlap.
+    
+    TRANSLATION:
+    Generate the concepts in English first.
+    
+    Output exactly these five language keys:
+    "en", "fr", "es", "ar", "tn"
+    
+    fr = French
+    es = Spanish
+    ar = Modern Standard Arabic
+    tn = Tunisian Arabic / Derja
+    
+    All five values must refer to the EXACT SAME CONCEPT.
+    
+    Use natural translations.
+    
+    Preserve famous names and brands when they normally remain unchanged.
+    
+    Do not translate a proper name into a different entity.
+    
+    SIMILARITY:
+    Estimate GAMEPLAY clue overlap, not dictionary similarity.
+    
+    Value must be between 0.00 and 1.00.
+    
+    easy: 0.40–0.54
+    medium: 0.55–0.69
+    hard: 0.70–1.00
+    
+    This is only a gameplay estimate.
+    
+    OUTPUT:
+    Return exactly 10 objects.
+    
+    Return valid JSON only.
+    
+    No markdown.
+    No code fences.
+    No explanation.
+    No comments.
+    No extra text.
+    
+    REQUIRED FORMAT:
+    
+    [
+      {
+        "civilian": {
+          "en": "Batman",
+          "fr": "Batman",
+          "es": "Batman",
+          "ar": "باتمان",
+          "tn": "Batman"
+        },
+        "undercover": {
+          "en": "Sherlock Holmes",
+          "fr": "Sherlock Holmes",
+          "es": "Sherlock Holmes",
+          "ar": "شيرلوك هولمز",
+          "tn": "Sherlock Holmes"
+        },
+        "similarity": 0.65,
+        "relation": "shared detective archetype"
+      }
+    ]
+    """
+    
     // MARK: - Availability
-
+    
     public var isAvailable: Bool {
-        #if canImport(FoundationModels)
+#if canImport(FoundationModels)
+        
         if #available(iOS 26.0, *) {
             return SystemLanguageModel.default.availability == .available
         }
-        #endif
-
+        
+#endif
+        
         return false
     }
-
+    
     // MARK: - Public API
-
+    
     public func randomPair(
         topic: String,
         language: AppLanguage,
         difficulty: PairDifficulty,
         excluding: Set<String>
     ) async throws -> WordPair {
-
+        
         guard isAvailable else {
             throw WordGeneratorError.unavailable(
                 "Apple Intelligence is not available on this device."
             )
         }
-
-        let key = "\(language.rawValue)|\(topic)|\(difficulty.rawValue)"
-
+        
+        let normalizedTopic = topic
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        let key = "\(language.rawValue)|\(normalizedTopic)|\(difficulty.rawValue)"
+        
         let normalizedExcluded = Set(
-            excluding.map(normalize)
+            excluding.map {
+                Self.normalize($0)
+            }
         )
-
+        
         func filtered(_ pairs: [WordPair]) -> [WordPair] {
             pairs.filter { pair in
-                let civilianKey = FoundationModelsWordGenerator.normalize(pair.civilian.values["en"])
-                let undercoverKey = FoundationModelsWordGenerator.normalize(pair.undercover.values["en"])
-
+                
+                let civilianKey = Self.normalize(
+                    pair.civilian.values["en"]
+                )
+                
+                let undercoverKey = Self.normalize(
+                    pair.undercover.values["en"]
+                )
+                
                 return !normalizedExcluded.contains(civilianKey)
-                    && !normalizedExcluded.contains(undercoverKey)
+                && !normalizedExcluded.contains(undercoverKey)
             }
         }
-
-        var available = filtered(cache[key] ?? [])
-
-        if available.isEmpty {
-            let fresh = try await fetchViaLLM(
-                topic: topic,
-                language: language,
-                difficulty: difficulty,
-                excluding: excluding
-            )
-
-            cache[key, default: []].append(contentsOf: fresh)
-
-            available = filtered(fresh)
+        
+        // ---------------------------------------------------------
+        // 1. Try existing cache
+        // ---------------------------------------------------------
+        
+        var available = filtered(
+            cache[key] ?? []
+        )
+        
+        if let pair = available.randomElement() {
+            return pair
         }
-
-        guard let pair = available.randomElement() else {
-            throw WordGeneratorError.noPairsAvailable
+        
+        // ---------------------------------------------------------
+        // 2. Generate with one retry
+        // ---------------------------------------------------------
+        
+        var attempts = 0
+        
+        while attempts < 2 {
+            
+            attempts += 1
+            
+            do {
+                
+                let fresh = try await fetchViaLLM(
+                    topic: normalizedTopic,
+                    language: language,
+                    difficulty: difficulty,
+                    excluding: excluding
+                )
+                
+                cache[key, default: []].append(
+                    contentsOf: fresh
+                )
+                
+                available = filtered(fresh)
+                
+                if let pair = available.randomElement() {
+                    return pair
+                }
+                
+            } catch {
+                
+                // Retry once if the model produced invalid JSON
+                // or no valid pairs.
+                if attempts >= 2 {
+                    throw error
+                }
+            }
         }
-
-        return pair
+        
+        throw WordGeneratorError.noPairsAvailable
     }
-
-    // MARK: - Foundation Models
-
+    
+    // MARK: - LLM Query
+    
     private func fetchViaLLM(
         topic: String,
         language: AppLanguage,
         difficulty: PairDifficulty,
         excluding: Set<String>
     ) async throws -> [WordPair] {
-
-        #if canImport(FoundationModels)
-
+        
+#if canImport(FoundationModels)
+        
         guard #available(iOS 26.0, *) else {
             throw WordGeneratorError.unavailable(
                 "Apple Intelligence requires iOS 26 or newer."
             )
         }
-
-        let difficultyDescription = difficultyPrompt(
-            difficulty
-        )
-
-        let topicInstruction = topicPrompt(
-            topic
-        )
-
-        let exclusionInstruction = exclusionPrompt(
-            excluding
-        )
-
-        let instructions = """
-        You are the creative director and game-design expert behind
-        a premium social deduction game called "Undercover".
-
-        Your job is NOT to generate dictionary pairs.
-
-        Your job is to create pairs that produce excellent HUMAN GAMEPLAY.
-
-        ============================================================
-        CORE GAME MECHANIC
-        ============================================================
-
-        Every player receives one concept.
-
-        CIVILIANS receive concept A.
-        THE UNDERCOVER receives concept B.
-
-        Players know that the two concepts are related.
-
-        During discussion, each player gives clues without saying
-        their concept directly.
-
-        The Undercover wins by blending in.
-
-        Therefore, the ideal pair creates this reaction:
-
-        "My clue fits my word perfectly...
-        but it could also fit the other word."
-
-        That is the central design goal.
-
-        ============================================================
-        THE MOST IMPORTANT RULE
-        ============================================================
-
-        DO NOT optimize for semantic similarity.
-
-        Optimize for CLUE OVERLAP.
-
-        A pair is excellent when several natural clues can honestly
-        describe BOTH concepts.
-
-        A pair is bad when they are merely related in a factual,
-        dictionary, category, or hierarchical way.
-
-        Example of the distinction:
-
-        BAD:
-        taxi / bus
-
-        They are both transportation, but players can easily give
-        clues such as "driver", "route", "public", "passenger".
-        The relationship is too obvious and generic.
-
-        BETTER:
-        Batman / Sherlock Holmes
-
-        Possible overlapping clues:
-
-        - mysterious
-        - detective
-        - iconic
-        - intelligent
-        - dark
-        - famous
-        - investigates
-        - Gotham/London-style atmosphere
-
-        Yet the concepts are completely different.
-
-        ============================================================
-        WHAT MAKES A GREAT PAIR
-        ============================================================
-
-        Prefer pairs where:
-
-        1. Both concepts are recognizable.
-
-        2. Both concepts have multiple associations.
-
-        3. At least 3–5 natural clues can apply to both.
-
-        4. Some clues fit one concept better than the other.
-
-        5. Players could disagree about which concept a clue points toward.
-
-        6. The concepts remain genuinely different.
-
-        7. Neither concept is simply a type, synonym, translation,
-           subtype, component, or definition of the other.
-
-        8. The pair creates interesting conversation.
-
-        9. The pair feels intentional rather than randomly related.
-
-        10. The pair would actually be fun to play.
-
-        ============================================================
-        CLUE OVERLAP TEST
-        ============================================================
-
-        Before accepting a pair, silently imagine five clues.
-
-        For example:
-
-        Batman / Sherlock Holmes
-
-        "detective"
-        "dark"
-        "intelligent"
-        "famous"
-        "mystery"
-
-        If most clues strongly fit only one concept,
-        REJECT the pair.
-
-        If the clues fit both concepts but one concept is slightly
-        more natural for each clue, KEEP the pair.
-
-        This is the ideal Undercover relationship.
-
-        ============================================================
-        AVOID OBVIOUS RELATIONSHIPS
-        ============================================================
-
-        Reject pairs based primarily on:
-
-        - synonym
-        - translation
-        - same object
-        - generic category
-        - parent/child
-        - subtype
-        - object/material
-        - tool/function
-        - ingredient/dish
-        - country/capital
-        - person/work when the relationship is trivial
-        - character/item from the same franchise when the connection
-          immediately reveals the answer
-        - two random things that merely share a category
-
-        BAD:
-
-        car / automobile
-        phone / smartphone
-        movie / film
-        fruit / apple
-        animal / dog
-        taxi / bus
-        sushi / sashimi
-        piano / violin
-
-        These may be related, but they do not necessarily create
-        strong psychological ambiguity.
-
-        ============================================================
-        PREFERRED RELATIONSHIPS
-        ============================================================
-
-        Search across different kinds of relationships.
-
-        Examples:
-
-        SAME ARCHETYPE
-        Batman / Sherlock Holmes
-
-        SAME CULTURAL ROLE
-        Messi / Michael Jordan
-
-        SAME SYMBOLIC IMAGE
-        Ferrari / Lamborghini
-
-        SAME EMOTIONAL EXPERIENCE
-        Interstellar / Arrival
-
-        SAME CULTURAL STATUS
-        Mozart / Beethoven
-
-        COMPETITORS
-        Coke / Pepsi
-
-        ICONIC REPRESENTATIVES
-        Apple / Tesla
-
-        SIMILAR PERSONALITY
-        Two famous characters with similar traits but different worlds.
-
-        SIMILAR VISUAL ASSOCIATION
-        Two concepts that evoke similar imagery.
-
-        SIMILAR SOCIAL ROLE
-        Two people/characters/brands occupying similar cultural roles.
-
-        INDIRECT CULTURAL CONNECTION
-        Two concepts connected by how people perceive them rather
-        than by a direct factual relationship.
-
-        ============================================================
-        IMPORTANT: DO NOT OVERUSE RIVALS
-        ============================================================
-
-        Rivalry is easy.
-
-        Messi / Ronaldo works.
-
-        Coke / Pepsi works.
-
-        Ferrari / Lamborghini works.
-
-        But if every pair is a rivalry, the game becomes predictable.
-
-        Across 10 pairs, deliberately vary the relationship.
-
-        ============================================================
-        DIFFICULTY
-        ============================================================
-
-        \(difficultyDescription)
-
-        EASY:
-
-        The pair should have obvious shared associations,
-        but the concepts should still be clearly different.
-
-        Target similarity:
-        0.40–0.54
-
-        MEDIUM:
-
-        The pair should share context, cultural meaning,
-        role, imagery, or associations.
-
-        Players should need discussion.
-
-        Target similarity:
-        0.55–0.69
-
-        HARD:
-
-        HARD IS NOT "more similar words".
-
-        HARD means:
-
-        Two different concepts that occupy a similar psychological
-        space in the player's mind.
-
-        The player should think:
-
-        "I know which word I have...
-        but this clue could absolutely have come from the other player."
-
-        Target similarity:
-        0.70–1.00
-
-        For HARD, prefer:
-
-        - archetype overlap
-        - cultural association
-        - personality
-        - symbolism
-        - emotional association
-        - visual association
-        - social role
-        - fame
-        - audience perception
-
-        Avoid literal semantic similarity.
-
-        ============================================================
-        TOPIC
-        ============================================================
-
-        The topic is a semantic universe.
-
-        Do NOT interpret it as a narrow database category.
-
-        If topic = Movies, consider:
-
-        - films
-        - actors
-        - directors
-        - characters
-        - franchises
-        - cinematic styles
-        - famous scenes
-        - cultural impact
-
-        If topic = Anime, consider:
-
-        - characters
-        - heroes
-        - villains
-        - worlds
-        - personalities
-        - fighting styles
-        - iconic imagery
-
-        If topic = Football, consider:
-
-        - players
-        - clubs
-        - managers
-        - playing styles
-        - rivalries
-        - legends
-        - football culture
-
-        If topic = Technology, consider:
-
-        - companies
-        - products
-        - founders
-        - innovations
-        - competitors
-        - cultural impact
-
-        The topic is inspiration, not a prison.
-
-        ============================================================
-        RECOGNIZABILITY
-        ============================================================
-
-        Prefer concepts that normal players can recognize.
-
-        Avoid:
-
-        - obscure historical figures
-        - extremely niche products
-        - obscure fictional characters
-        - technical terminology
-        - concepts requiring specialist knowledge
-
-        A brilliant pair is useless if players do not know one
-        of the concepts.
-
-        ============================================================
-        ANTI-BORING FILTER
-        ============================================================
-
-        Reject a pair if the main clue connecting them is simply:
-
-        "They are both X."
-
-        Examples:
-
-        "both instruments"
-        "both alcoholic drinks"
-        "both vehicles"
-        "both animals"
-        "both movies"
-
-        A category alone is NOT enough.
-
-        There must be richer overlapping associations.
-
-        ============================================================
-        ANTI-OBVIOUS FILTER
-        ============================================================
-
-        Reject a pair if knowing one concept practically reveals
-        the other.
-
-        Example:
-
-        Harry Potter / Hermione
-
-        Too directly connected.
-
-        Batman / Joker
-
-        Too directly connected.
-
-        Naruto / Sasuke
-
-        Too directly connected.
-
-        Prefer concepts where the relationship is less immediate.
-
-        ============================================================
-        PAIR QUALITY SCORING
-        ============================================================
-
-        Before outputting each pair, silently score it from 0–10:
-
-        Recognizability
-        Clue overlap
-        Ambiguity
-        Concept distinction
-        Gameplay value
-        Relationship quality
-        Topic relevance
-        Cultural accessibility
-
-        Reject anything below 8/10.
-
-        Do not output the score.
-
-        ============================================================
-        PAIR DIVERSITY
-        ============================================================
-
-        The 10 pairs should NOT feel like variations of the same idea.
-
-        Deliberately vary:
-
-        - relationship type
-        - domain
-        - type of concept
-        - cultural association
-        - clue style
-
-        Do not generate ten competitor pairs.
-
-        Do not generate ten character pairs.
-
-        Do not generate ten food pairs.
-
-        Do not generate ten object pairs.
-
-        ============================================================
-        SIMILARITY
-        ============================================================
-
-        The similarity number is a GAMEPLAY estimate.
-
-        It does not represent linguistic similarity.
-
-        It represents:
-
-        "How difficult would it be for players to distinguish
-        the two concepts from indirect clues?"
-
-        Use a number between 0.00 and 1.00.
-
-        Match the requested difficulty.
-
-        ============================================================
-        RELATION
-        ============================================================
-
-        Write a SHORT explanation of the relationship.
-
-        Examples:
-
-        "detective archetype"
-        "cultural icons"
-        "symbolic luxury"
-        "psychological association"
-        "competing brands"
-        "similar visual identity"
-        "shared cultural role"
-
-        Do not write a sentence.
-
-        ============================================================
-        TRANSLATION
-        ============================================================
-
-        First design the pair in English.
-
-        Only after the English pair is finalized,
-        translate the exact same concepts.
-
-        Required keys:
-
-        en = English
-        fr = French
-        es = Spanish
-        ar = Modern Standard Arabic
-        tn = Tunisian Arabic / Tunisian Derja
-
-        All five values must refer to EXACTLY the same concept.
-
-        Do not alter the concept to make a translation easier.
-
-        ============================================================
-        ARABIC
-        ============================================================
-
-        ARABIC:
-
-        Use Modern Standard Arabic.
-
-        Use Arabic script.
-
-        No Arabizi.
-
-        No Tunisian dialect.
-
-        ============================================================
-        TUNISIAN
-        ============================================================
-
-        Use natural Tunisian Derja as actually spoken by Tunisians.
-
-        Use Arabic script.
-
-        Do NOT simply copy the MSA translation.
-
-        Do NOT translate word-for-word when that sounds unnatural.
-
-        Do NOT use Egyptian, Moroccan, Levantine, Gulf Arabic,
-        or another dialect.
-
-        Prefer common Tunisian vocabulary.
-
-        If the concept is a proper name, brand, character,
-        film, or international title, preserve the recognizable
-        name rather than inventing an artificial translation.
-
-        ============================================================
-        TRANSLATION VALIDATION
-        ============================================================
-
-        Silently check:
-
-        Does the French refer to the same concept?
-
-        Does the Spanish refer to the same concept?
-
-        Does the MSA refer to the same concept?
-
-        Does the Tunisian refer to the same concept?
-
-        If not, regenerate the translation.
-
-        ============================================================
-        EXCLUSIONS
-        ============================================================
-
-        \(exclusionInstruction)
-
-        Never reuse an excluded concept.
-
-        Also avoid obvious translated equivalents.
-
-        ============================================================
-        FINAL INTERNAL REVIEW
-        ============================================================
-
-        Before producing the final JSON:
-
-        1. Generate more candidates internally than needed.
-
-        2. Reject weak candidates.
-
-        3. Keep only the strongest 10.
-
-        4. Check every pair for clue overlap.
-
-        5. Check that the concepts are genuinely different.
-
-        6. Check recognizability.
-
-        7. Check topic relevance.
-
-        8. Check difficulty.
-
-        9. Check translation accuracy.
-
-        10. Check Tunisian naturalness.
-
-        11. Check relationship diversity.
-
-        12. Replace anything mediocre.
-
-        NEVER output a pair just because it technically satisfies
-        the instructions.
-
-        QUALITY > COMPLETION.
-
-        ============================================================
-        OUTPUT
-        ============================================================
-
-        Return EXACTLY 10 objects.
-
-        Return ONLY valid JSON.
-
-        No markdown.
-
-        No explanation.
-
-        No comments.
-
-        No extra fields.
-
-        Format:
-
-        [
-          {
-            "civilian": {
-              "en": "",
-              "fr": "",
-              "es": "",
-              "ar": "",
-              "tn": ""
-            },
-            "undercover": {
-              "en": "",
-              "fr": "",
-              "es": "",
-              "ar": "",
-              "tn": ""
-            },
-            "similarity": 0.00,
-            "relation": ""
-          }
-        ]
-        """
-
+        
         let session = LanguageModelSession(
-            instructions: instructions
+            instructions: Self.baseSystemPrompt
         )
-
-        let response = try await session.respond(
-            to: """
-            \(topicInstruction)
-
-            Requested difficulty:
-            \(difficulty.rawValue.uppercased())
-
-            \(difficultyDescription)
-
-            Generate the final 10 premium pairs now.
+        
+        let topicValue = topic.isEmpty
+        ? "General Everyday Concepts"
+        : topic
+        
+        let exclusionText: String
+        
+        if excluding.isEmpty {
+            exclusionText = ""
+        } else {
+            exclusionText = """
+            EXCLUDE THESE CONCEPTS:
+            \(excluding.sorted().joined(separator: ", "))
+            
+            Do not use any of these concepts in either side of a pair.
             """
+        }
+        
+        let prompt = """
+        TOPIC: \(topicValue)
+        
+        DIFFICULTY: \(difficulty.rawValue)
+        
+        \(exclusionText)
+        
+        Generate exactly 10 pairs.
+        
+        Remember:
+        - Every pair must create real clue ambiguity.
+        - Every pair must contain two distinct concepts.
+        - Never use identity containment.
+        - Never mix incompatible conceptual levels.
+        - Stay directly within the topic.
+        - Use different relationship types.
+        - Return JSON only.
+        """
+        
+        let response = try await session.respond(
+            to: prompt
         )
-
-        return try Self.parseJSON(
+        
+        return try Self.parseAndValidateJSON(
             response.content,
-            topic: topic
+            topic: topicValue,
+            difficulty: difficulty
         )
-
-        #else
-
+        
+#else
+        
         throw WordGeneratorError.unavailable(
             "Apple Intelligence is not available on this platform."
         )
-
-        #endif
+        
+#endif
     }
-
-    // MARK: - Prompt Helpers
-
-    private func difficultyPrompt(
-        _ difficulty: PairDifficulty
-    ) -> String {
-
-        switch difficulty {
-
-        case .easy:
-            return """
-            EASY — 0.40–0.54
-
-            Clearly different concepts with several obvious
-            shared associations.
-
-            Players should usually identify the difference quickly,
-            but clues should still overlap enough to make the
-            Undercover playable.
-            """
-
-        case .medium:
-            return """
-            MEDIUM — 0.55–0.69
-
-            Different concepts with substantial contextual,
-            cultural, visual, emotional, or archetypal overlap.
-
-            Players should need discussion before they can
-            confidently identify the Undercover.
-            """
-
-        case .hard:
-            return """
-            HARD — 0.70–1.00
-
-            Extremely strong clue overlap without semantic equivalence.
-
-            The concepts should be psychologically close but
-            objectively different.
-
-            Players should repeatedly think:
-
-            "That clue works for both."
-
-            Hard should feel clever, not confusing.
-            """
-        }
-    }
-
-    private func topicPrompt(
-        _ topic: String
-    ) -> String {
-
-        let trimmed = topic
-            .trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
-
-        guard !trimmed.isEmpty else {
-            return """
-            TOPIC:
-            No specific topic.
-
-            Use broadly recognizable concepts from everyday life,
-            entertainment, culture, technology, sports, food,
-            places, people, brands, and common experiences.
-
-            Prefer culturally accessible concepts.
-            """
-        }
-
-        return """
-        TOPIC:
-        \(trimmed)
-
-        Interpret this as a broad semantic universe.
-
-        The concepts should clearly belong to or strongly connect
-        with this universe.
-
-        You may explore different aspects of the topic rather than
-        staying inside one narrow category.
-        """
-    }
-
-    private func exclusionPrompt(
-        _ excluding: Set<String>
-    ) -> String {
-
-        guard !excluding.isEmpty else {
-            return ""
-        }
-
-        let words = excluding
-            .sorted()
-            .joined(separator: ", ")
-
-        return """
-        ALREADY USED CONCEPTS:
-
-        \(words)
-
-        Do NOT reuse any of these concepts.
-
-        Also avoid obvious translations, alternate spellings,
-        titles, aliases, or extremely direct equivalents.
-        """
-    }
-
-    // MARK: - JSON Parsing
-
-    private static func parseJSON(
+    
+    // MARK: - JSON Parsing & Validation
+    
+    private nonisolated static func parseAndValidateJSON(
         _ text: String,
-        topic: String
+        topic: String,
+        difficulty: PairDifficulty
     ) throws -> [WordPair] {
-
+        
         var clean = text
             .replacingOccurrences(
                 of: "```json",
@@ -882,58 +545,126 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
             .trimmingCharacters(
                 in: .whitespacesAndNewlines
             )
-
-        // Recover the JSON array if the model accidentally
-        // added a small amount of surrounding text.
+        
+        // ---------------------------------------------------------
+        // Extract JSON array if model added surrounding text.
+        // ---------------------------------------------------------
+        
         if let start = clean.firstIndex(of: "["),
            let end = clean.lastIndex(of: "]"),
            start < end {
-
+            
             clean = String(
                 clean[start...end]
             )
         }
-
+        
         guard let data = clean.data(
             using: .utf8
         ) else {
-
-            throw WordGeneratorError.parsingFailed(
-                clean
-            )
+            throw WordGeneratorError.parsingFailed(clean)
         }
-
-        struct Raw: Decodable {
-
-            let civilian: [String: String]
-
-            let undercover: [String: String]
-
+        
+        // ---------------------------------------------------------
+        // Flexible JSON model.
+        //
+        // Accepts both:
+        //
+        // "civilian": "Batman"
+        //
+        // and:
+        //
+        // "civilian": {
+        //     "en": "Batman",
+        //     ...
+        // }
+        //
+        // The second format is preferred.
+        // ---------------------------------------------------------
+        
+        struct RawPair: Decodable {
+            
+            let civilian: FlexibleValue
+            let undercover: FlexibleValue
             let similarity: Double?
-
             let relation: String?
+            
+            enum FlexibleValue: Decodable {
+                
+                case string(String)
+                case dictionary([String: String])
+                
+                init(from decoder: Decoder) throws {
+                    
+                    let container =
+                    try decoder.singleValueContainer()
+                    
+                    if let dictionary = try? container.decode(
+                        [String: String].self
+                    ) {
+                        self = .dictionary(dictionary)
+                        return
+                    }
+                    
+                    if let string = try? container.decode(
+                        String.self
+                    ) {
+                        self = .string(string)
+                        return
+                    }
+                    
+                    throw DecodingError.typeMismatch(
+                        FlexibleValue.self,
+                        DecodingError.Context(
+                            codingPath: decoder.codingPath,
+                            debugDescription:
+                                "Expected String or [String: String]"
+                        )
+                    )
+                }
+                
+                func toDictionary() -> [String: String] {
+                    
+                    switch self {
+                            
+                        case .dictionary(let dictionary):
+                            return dictionary
+                            
+                        case .string(let value):
+                            
+                            // Legacy/simple response.
+                            //
+                            // We duplicate the value across languages
+                            // so the pair can still be parsed.
+                            //
+                            // This is intentionally accepted only as
+                            // a parser fallback.
+                            
+                            return [
+                                "en": value,
+                                "fr": value,
+                                "es": value,
+                                "ar": value,
+                                "tn": value
+                            ]
+                    }
+                }
+            }
         }
-
-        let rawPairs: [Raw]
-
-        do {
-
-            rawPairs = try JSONDecoder().decode(
-                [Raw].self,
-                from: data
-            )
-
-        } catch {
-
+        
+        guard let rawPairs = try? JSONDecoder().decode(
+            [RawPair].self,
+            from: data
+        ) else {
+            
             throw WordGeneratorError.parsingFailed(
                 clean
             )
         }
-
+        
         var seen = Set<String>()
-
         var pairs: [WordPair] = []
-
+        
         let requiredLanguages = [
             "en",
             "fr",
@@ -941,131 +672,214 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
             "ar",
             "tn"
         ]
-
+        
+        // ---------------------------------------------------------
+        // Validate each candidate.
+        // ---------------------------------------------------------
+        
         for raw in rawPairs {
-
-            let civilianEnglish = normalize(
-                raw.civilian["en"]
+            
+            let civilianValues =
+            raw.civilian.toDictionary()
+            
+            let undercoverValues =
+            raw.undercover.toDictionary()
+            
+            let civilianEN = normalize(
+                civilianValues["en"]
             )
-
-            let undercoverEnglish = normalize(
-                raw.undercover["en"]
+            
+            let undercoverEN = normalize(
+                undercoverValues["en"]
             )
-
-            // Both concepts must exist.
-            guard !civilianEnglish.isEmpty,
-                  !undercoverEnglish.isEmpty
-            else {
+            
+            // -----------------------------------------------------
+            // 1. Non-empty
+            // -----------------------------------------------------
+            
+            guard !civilianEN.isEmpty,
+                  !undercoverEN.isEmpty else {
                 continue
             }
-
-            // Concepts cannot be identical.
-            guard civilianEnglish != undercoverEnglish
-            else {
+            
+            // -----------------------------------------------------
+            // 2. Exact same concept
+            // -----------------------------------------------------
+            
+            guard civilianEN != undercoverEN else {
                 continue
             }
-
-            // Do not allow any concept to appear twice
-            // inside the same generated batch.
-            guard !seen.contains(civilianEnglish),
-                  !seen.contains(undercoverEnglish)
-            else {
-                continue
-            }
-
-            // Require every translation.
-            let civilianComplete =
-                hasAllLanguages(
-                    raw.civilian,
-                    languages: requiredLanguages
+            
+            // -----------------------------------------------------
+            // 3. Obvious token containment
+            //
+            // Example:
+            // "Star Trek"
+            // "Star Trek Voyager"
+            //
+            // "Naruto"
+            // "Naruto Shippuden"
+            // -----------------------------------------------------
+            
+            let civilianTokens = Set(
+                civilianEN.components(
+                    separatedBy: .whitespaces
                 )
-
-            let undercoverComplete =
-                hasAllLanguages(
-                    raw.undercover,
-                    languages: requiredLanguages
+            )
+            
+            let undercoverTokens = Set(
+                undercoverEN.components(
+                    separatedBy: .whitespaces
                 )
-
-            guard civilianComplete,
-                  undercoverComplete
-            else {
+            )
+            
+            if civilianTokens.isSubset(
+                of: undercoverTokens
+            ) ||
+                undercoverTokens.isSubset(
+                    of: civilianTokens
+                ) {
                 continue
             }
-
+            
+            // -----------------------------------------------------
+            // 4. Deduplicate concepts inside this batch.
+            // -----------------------------------------------------
+            
+            guard !seen.contains(civilianEN),
+                  !seen.contains(undercoverEN) else {
+                continue
+            }
+            
+            // -----------------------------------------------------
+            // 5. Translation validation
+            // -----------------------------------------------------
+            
+            var validTranslations = true
+            
+            for language in requiredLanguages {
+                
+                guard
+                    let civilianValue =
+                        civilianValues[language]?
+                        .trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        ),
+                    
+                        let undercoverValue =
+                        undercoverValues[language]?
+                        .trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        ),
+                    
+                        !civilianValue.isEmpty,
+                    !undercoverValue.isEmpty
+                        
+                else {
+                    validTranslations = false
+                    break
+                }
+            }
+            
+            guard validTranslations else {
+                continue
+            }
+            
+            // -----------------------------------------------------
+            // 6. Reject identical translations
+            //
+            // This catches cases where two concepts collapse
+            // into the same translated value.
+            // -----------------------------------------------------
+            
+            var translationCollision = false
+            
+            for language in requiredLanguages {
+                
+                let civilianValue = normalize(
+                    civilianValues[language]
+                )
+                
+                let undercoverValue = normalize(
+                    undercoverValues[language]
+                )
+                
+                if !civilianValue.isEmpty,
+                   civilianValue == undercoverValue {
+                    
+                    translationCollision = true
+                    break
+                }
+            }
+            
+            guard !translationCollision else {
+                continue
+            }
+            
+            // -----------------------------------------------------
+            // 7. Similarity
+            // -----------------------------------------------------
+            
+            let similarity: Double?
+            
+            if let value = raw.similarity,
+               value >= 0.0,
+               value <= 1.0 {
+                
+                similarity = value
+                
+            } else {
+                
+                similarity = nil
+            }
+            
+            // -----------------------------------------------------
+            // 8. Build domain objects
+            // -----------------------------------------------------
+            
             let civilian = LocalizedWord(
-                values: raw.civilian
+                values: civilianValues
             )
-
+            
             let undercover = LocalizedWord(
-                values: raw.undercover
+                values: undercoverValues
             )
-
+            
             let pair = WordPair(
                 civilian: civilian,
                 undercover: undercover,
                 topic: topic,
-                similarity: raw.similarity
+                similarity: similarity
             )
-
-            seen.insert(civilianEnglish)
-            seen.insert(undercoverEnglish)
-
+            
             pairs.append(pair)
+            
+            seen.insert(civilianEN)
+            seen.insert(undercoverEN)
         }
-
+        
+        // ---------------------------------------------------------
+        // At least one valid pair must survive.
+        // ---------------------------------------------------------
+        
         guard !pairs.isEmpty else {
             throw WordGeneratorError.noPairsAvailable
         }
-
+        
         return pairs
     }
-
-    private static func hasAllLanguages(
-        _ values: [String: String],
-        languages: [String]
-    ) -> Bool {
-
-        languages.allSatisfy { language in
-
-            guard let value = values[language]
-            else {
-                return false
-            }
-
-            return !value
-                .trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                )
-                .isEmpty
-        }
-    }
-
+    
     // MARK: - Normalization
-
-    private static func normalize(
+    
+    private nonisolated static func normalize(
         _ value: String?
     ) -> String {
-
+        
         guard let value else {
             return ""
         }
-
+        
         return value
-            .trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
-            .lowercased()
-            .folding(
-                options: .diacriticInsensitive,
-                locale: .current
-            )
-    }
-
-    private func normalize(
-        _ value: String
-    ) -> String {
-
-        value
             .trimmingCharacters(
                 in: .whitespacesAndNewlines
             )

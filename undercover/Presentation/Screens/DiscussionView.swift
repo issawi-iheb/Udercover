@@ -196,6 +196,49 @@ public struct DiscussionView: View {
                         .appSpring.delay(0.3),
                         value: appeared
                     )
+                    // MARK: - Skip Vote
+
+                    Button {
+                        Haptic.medium()
+                        viewModel.skipVoting()
+                    } label: {
+                        Text("SKIP VOTE")
+                            .font(AppFont.button(size: 15))
+                            .tracking(
+                                viewModel.selectedLanguage.isRTL
+                                ? 0
+                                : 3
+                            )
+                            .foregroundStyle(
+                                Color.white.opacity(0.55)
+                            )
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(
+                                Color.white.opacity(0.04)
+                            )
+                            .clipShape(
+                                RoundedRectangle(
+                                    cornerRadius: Radius.md
+                                )
+                            )
+                            .overlay(
+                                RoundedRectangle(
+                                    cornerRadius: Radius.md
+                                )
+                                .strokeBorder(
+                                    Color.appBorder,
+                                    lineWidth: 1
+                                )
+                            )
+                    }
+                    .padding(.horizontal, Space.pagePadding)
+                    .padding(.bottom, geo.safeAreaInsets.bottom + Space.md)
+                    .opacity(appeared ? 1 : 0)
+                    .animation(
+                        .appSpring.delay(0.35),
+                        value: appeared
+                    )
                 }
             }
         }
