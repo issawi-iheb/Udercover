@@ -90,49 +90,9 @@ public final class GameViewModel: ObservableObject {
     // MARK: - Private Infrastructure
     
     private var fsm = GameStateMachine()
-    
     private let engine = GameEngine()
-    
-    private let topicService = TopicService()
-    
-    private let pairStore = PlayedPairStore()
-    
+    private let wordPairProvider = WordPairProvider()
     private var timer: Timer?
-    
-    
-    
-    // MARK: - Word Cache
-    
-    private var preparedWordPairs: [WordPair] = []
-    
-    private var preparedConfiguration: WordBatchConfiguration?
-    
-    private var preparationTask: Task<Void, Never>?
-    
-    private let preparationBatchSize = 3
-    
-    
-    private struct WordBatchConfiguration: Equatable {
-        
-        let topic: String
-        
-        let language: AppLanguage
-        
-        let difficulty: PairDifficulty
-    }
-    
-    
-    
-    // MARK: - Generator
-    
-    private lazy var generatorService = WordGeneratorService(
-        generators: [
-            LocalWordGenerator(),
-            FoundationModelsWordGenerator()
-        ]
-    )
-    
-    
     
     // MARK: - Derived
     
@@ -257,22 +217,14 @@ public final class GameViewModel: ObservableObject {
     // MARK: - Game Lifecycle
     
     
-    public func startGame(
-        keepPlayers: Bool = false
-    ) async {
-        
-        
+    public func startGame(keepPlayers: Bool = false) async {
+
         guard players.count >= 3 else {
             return
         }
-        
-        
         isGeneratingWords = true
         
         wordGeneratorError = nil
-        
-        
-        
         if keepPlayers {
             
             players = players.map {
@@ -284,9 +236,6 @@ public final class GameViewModel: ObservableObject {
                 )
             }
         }
-        
-        
-        
         if case .results = fsm.state {
             
             fsm.handle(
@@ -297,34 +246,28 @@ public final class GameViewModel: ObservableObject {
             
             fsm.handle(.startLoading)
         }
-        
-        
         syncState()
         
         
-        
         let topic = selectedTopic ?? ""
-        
-        let used =
-        await pairStore.usedKeys(
-            for: topic
-        )
-        
-        
-        let pair =
-        await resolvePair(
-            topic: topic,
-            excluding: used
-        )
-        
-        
-        await pairStore.markPlayed(
-            trackingKey: pair.trackingKey,
-            topic: topic
-        )
-        
-        
-        
+
+        let pair: WordPair
+
+        do {
+            pair = try await wordPairProvider.nextPair(
+                playerCount: players.count,
+                topic: topic,
+                language: selectedLanguage,
+                difficulty: selectedDifficulty
+            )
+        } catch {
+            isGeneratingWords = false
+            wordGeneratorError = error.localizedDescription
+
+            print("❌ Failed to generate word pair:", error)
+
+            return
+        }
         let assignment =
         engine.assign(
             players: players,
@@ -332,51 +275,21 @@ public final class GameViewModel: ObservableObject {
             language: selectedLanguage,
             includeMrWhite: mrWhiteEnabled
         )
-        
-        
-        
-        assignments =
-        assignment.wordsByPlayer
-        
-        
-        rolesByPlayer =
-        assignment.rolesByPlayer
-        
-        
-        undercoverPlayerID =
-        assignment.undercoverPlayerID
-        
-        
-        mrWhitePlayerID =
-        assignment.mrWhitePlayerID
-        
-        
-        currentCivilianWord =
-        assignment.civilianWord
-        
-        
-        currentUndercoverWord =
-        assignment.undercoverWord
-        
-        
+        assignments = assignment.wordsByPlayer
+        rolesByPlayer = assignment.rolesByPlayer
+        undercoverPlayerID = assignment.undercoverPlayerID
+        mrWhitePlayerID = assignment.mrWhitePlayerID
+        currentCivilianWord = assignment.civilianWord
+        currentUndercoverWord = assignment.undercoverWord
         revealOrder =
         alivePlayers.map(\.id).shuffled()
-        
-        
-        
         isGeneratingWords = false
-        
-        
-        
         fsm.handle(
             .wordsReady(
                 playerCount: revealOrder.count
             )
         )
-        
-        
         syncState()
-        
         Haptic.success()
     }
     
@@ -412,16 +325,7 @@ public final class GameViewModel: ObservableObject {
         mrWhiteGuessInput = ""
         
         selectedVotePlayerID = nil
-        
-        
-        preparedWordPairs.removeAll()
-        
-        preparedConfiguration = nil
-        
-        preparationTask?.cancel()
-        
-        preparationTask = nil
-        
+        wordPairProvider.reset()
         
         fsm.handle(.newGame)
         
@@ -456,15 +360,11 @@ public final class GameViewModel: ObservableObject {
         
         assignments[player.id] ?? ""
     }
-    
-    
-    
+
     public func role(for player: Player) -> PlayerRole {
         
         rolesByPlayer[player.id] ?? .civilian
     }
-    
-    
     
     public func revealTapped() {
         
@@ -474,9 +374,7 @@ public final class GameViewModel: ObservableObject {
         
         syncState()
     }
-    
-    
-    
+
     public func revealNext() {
         
         Haptic.light()
@@ -488,18 +386,8 @@ public final class GameViewModel: ObservableObject {
         )
         
         syncState()
-        
-        
-        
-        if case .discussion = gameState {
-            
-            startDiscussionTimer(
-                seconds: Config.discussionTimerSeconds
-            )
-        }
     }
-    
-    
+
     
     // MARK: - Timer
     
@@ -507,14 +395,9 @@ public final class GameViewModel: ObservableObject {
     public func startDiscussionTimer(seconds: Int) {
         
         stopTimer()
-        
-        
         timeRemaining = seconds
         
         isTimerRunning = true
-        
-        
-        
         timer = Timer.scheduledTimer(
             withTimeInterval: 1,
             repeats: true
@@ -591,8 +474,6 @@ public final class GameViewModel: ObservableObject {
         syncState()
     }
     
-    // MARK: - Skip Voting
-
     // MARK: - Skip Voting
 
     public func skipVoting() {
@@ -684,9 +565,7 @@ public final class GameViewModel: ObservableObject {
             "Alive MrWhite:",
             board.aliveMrWhite
         )
-        
-        
-        
+
         fsm.handle(
             .votingFinished(
                 eliminated: role,
@@ -696,31 +575,20 @@ public final class GameViewModel: ObservableObject {
                 round: currentRound
             )
         )
-        
-        
-        
+
         syncState()
-        
-        
-        
+
         if case .mrWhiteGuess = gameState {
             
             mrWhiteGuessInput = ""
         }
-        
-        
-        
+
         triggerResultHaptic()
     }
-    
-    
-    
-    
+
     
     // MARK: - Mr White Guess
-    
-    
-    
+
     public func submitMrWhiteGuess() {
         
         
@@ -749,9 +617,7 @@ public final class GameViewModel: ObservableObject {
             "Correct:",
             correct
         )
-        
-        
-        
+
         fsm.handle(
             .mrWhiteGuessResult(
                 correct: correct,
@@ -765,8 +631,6 @@ public final class GameViewModel: ObservableObject {
         
         syncState()
         
-        
-        
         if correct {
             
             Haptic.error()
@@ -776,22 +640,15 @@ public final class GameViewModel: ObservableObject {
             Haptic.success()
         }
     }
-    
-    
-    
-    
+
     // MARK: - Queries
-    
-    
-    
+
     public func undercoverPlayer() -> Player? {
         
         players.first {
             $0.id == undercoverPlayerID
         }
     }
-    
-    
     
     public func mrWhitePlayer() -> Player? {
         
@@ -800,22 +657,15 @@ public final class GameViewModel: ObservableObject {
         }
     }
     
-    
-    
-    
     // MARK: - Private Helpers
-    
-    
-    
+
     private func syncState() {
         
         gameState = fsm.state
     }
     
-    
-    
+
     private func eliminate(playerID: UUID) {
-        
         
         guard let index =
                 players.firstIndex(
@@ -827,16 +677,9 @@ public final class GameViewModel: ObservableObject {
             
             return
         }
-        
-        
-        
+
         Haptic.heavy()
-        
-        
-        
         withAnimation(.spring()) {
-            
-            
             players[index] =
             Player(
                 id: players[index].id,
@@ -846,392 +689,28 @@ public final class GameViewModel: ObservableObject {
         }
     }
     
-    
-    
-    
     private func triggerResultHaptic() {
-        
         
         switch gameState {
                 
-                
             case .results(.civiliansWin):
-                
                 Haptic.success()
-                
-                
-                
             case .results(.undercoverWins),
-                    .results(.mrWhiteWins):
+                  .results(.mrWhiteWins):
                 
                 Haptic.error()
                 
-                
-                
-            default:
-                
-                break
+            default: break
         }
     }
     // MARK: - Word Preparation
 
-
-    /// Prepares word pairs in background.
-    /// Keeps a small cache ready before the game starts.
     private func prepareWordPairsIfNeeded() {
-
-
-        guard players.count >= 3,
-              let topic = selectedTopic,
-              !topic.isEmpty
-        else {
-
-            preparationTask?.cancel()
-
-            preparationTask = nil
-
-            preparedWordPairs.removeAll()
-
-            preparedConfiguration = nil
-
-            return
-        }
-
-
-
-        let configuration =
-        WordBatchConfiguration(
-            topic: topic,
+        wordPairProvider.prepareIfNeeded(
+            playerCount: players.count,
+            topic: selectedTopic,
             language: selectedLanguage,
             difficulty: selectedDifficulty
         )
-
-
-
-        // Already enough cached pairs
-        if preparedConfiguration == configuration,
-           preparedWordPairs.count >= preparationBatchSize {
-
-            return
-        }
-
-
-
-
-        // Configuration changed
-        if preparedConfiguration != configuration {
-
-
-            preparationTask?.cancel()
-
-            preparationTask = nil
-
-
-            preparedWordPairs.removeAll()
-
-
-            preparedConfiguration = configuration
-        }
-
-
-
-
-        // Already generating
-        guard preparationTask == nil else {
-
-            return
-        }
-
-
-
-
-        preparationTask =
-        Task { [weak self] in
-
-
-            guard let self else {
-
-                return
-            }
-
-
-
-            var excluded =
-            await pairStore.usedKeys(
-                for: configuration.topic
-            )
-
-
-
-
-            while !Task.isCancelled {
-
-
-
-                let currentCount =
-                await MainActor.run {
-
-                    self.preparedWordPairs.count
-                }
-
-
-
-                if currentCount >= self.preparationBatchSize {
-
-                    break
-                }
-
-
-
-
-                do {
-
-
-
-                    let pair =
-                    try await generatorService.randomPair(
-                        topic: configuration.topic,
-                        language: configuration.language,
-                        difficulty: configuration.difficulty,
-
-                        // IMPORTANT:
-                        // prevents Apple Intelligence context overflow
-                        excluding: Set(
-                            excluded.suffix(20)
-                        )
-                    )
-
-
-
-
-                    excluded.insert(
-                        pair.trackingKey
-                    )
-
-
-
-
-                    await MainActor.run {
-
-
-
-                        guard self.preparedConfiguration == configuration
-                        else {
-
-                            return
-                        }
-
-
-
-                        self.preparedWordPairs.append(
-                            pair
-                        )
-                    }
-
-
-
-
-                } catch {
-
-
-                    print(
-                        "⚠️ Word preparation stopped:",
-                        error.localizedDescription
-                    )
-
-
-                    break
-                }
-            }
-
-
-
-
-
-            await MainActor.run {
-
-
-                self.preparationTask = nil
-            }
-        }
-    }
-
-
-
-
-
-    // MARK: - Resolve Word Pair
-
-
-
-    private func resolvePair(
-        topic: String,
-        excluding: Set<String>
-    ) async -> WordPair {
-
-
-
-        // Use prepared cache first
-
-        if let configuration = preparedConfiguration,
-
-           configuration.topic == topic,
-
-           configuration.language == selectedLanguage,
-
-           configuration.difficulty == selectedDifficulty {
-
-
-
-            if let index =
-                preparedWordPairs.firstIndex(
-                    where: {
-                        !excluding.contains(
-                            $0.trackingKey
-                        )
-                    }
-                ) {
-
-
-
-                let pair =
-                preparedWordPairs.remove(
-                    at: index
-                )
-
-
-
-                // refill asynchronously
-
-                prepareWordPairsIfNeeded()
-
-
-
-                return pair
-            }
-        }
-
-
-
-
-
-        // Normal generation fallback
-
-        do {
-
-
-            return try await generatorService.randomPair(
-
-                topic: topic,
-
-                language: selectedLanguage,
-
-                difficulty: selectedDifficulty,
-
-                // IMPORTANT:
-                // avoids huge prompts
-                excluding: Set(
-                    excluding.suffix(20)
-                )
-            )
-
-
-
-        } catch {
-
-
-
-            wordGeneratorError =
-            error.localizedDescription
-
-
-
-            return fallbackPair()
-        }
-    }
-
-
-
-
-
-    // MARK: - Emergency fallback
-
-
-
-    private func fallbackPair() -> WordPair {
-
-
-        let options: [WordPair] = [
-
-
-            WordPair(
-
-                civilian:
-                    LocalizedWord(
-                        values: [
-                            "en":"cat",
-                            "fr":"chat",
-                            "ar":"قطة",
-                            "es":"gato",
-                            "tn":"قطوس"
-                        ]
-                    ),
-
-
-                undercover:
-                    LocalizedWord(
-                        values: [
-                            "en":"tiger",
-                            "fr":"tigre",
-                            "ar":"نمر",
-                            "es":"tigre",
-                            "tn":"نمر"
-                        ]
-                    ),
-
-
-                topic: "animals",
-
-                similarity: 0.62
-            ),
-
-
-
-
-            WordPair(
-
-                civilian:
-                    LocalizedWord(
-                        values: [
-                            "en":"dog",
-                            "fr":"chien",
-                            "ar":"كلب",
-                            "es":"perro",
-                            "tn":"كلب"
-                        ]
-                    ),
-
-
-                undercover:
-                    LocalizedWord(
-                        values: [
-                            "en":"wolf",
-                            "fr":"loup",
-                            "ar":"ذئب",
-                            "es":"lobo",
-                            "tn":"ذيب"
-                        ]
-                    ),
-
-
-                topic: "animals",
-
-                similarity: 0.60
-            )
-        ]
-
-
-
-        return options.randomElement()!
     }
 }

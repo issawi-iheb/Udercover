@@ -36,7 +36,7 @@ public actor FoundationModelsTopicProvider: TopicProvider {
 
             do {
                 let response = try await session.respond(
-                    to: "Generate exactly 30 premium game topics."
+                    to: "Generate 20 distinct, high-quality topics for Undercover."
                 )
 
                 let json = Self.cleanJSON(response.content)
@@ -57,8 +57,19 @@ public actor FoundationModelsTopicProvider: TopicProvider {
                         )
                     }
                     .filter { !$0.isEmpty }
+                print("""
+                🧠 [FoundationModelsTopicProvider]
+                Generated topics:
+                \(cleanedTopics.enumerated()
+                    .map { "\($0.offset + 1). \($0.element)" }
+                    .joined(separator: "\n"))
+                """)
+                guard cleanedTopics.count == 20 else {
+                    print("""
+                    ⚠️ [FoundationModelsTopicProvider]
+                    Expected exactly 20 topics, got \(cleanedTopics.count)
+                    """)
 
-                guard !cleanedTopics.isEmpty else {
                     return Self.fallbackTopics
                 }
 
@@ -84,48 +95,62 @@ public actor FoundationModelsTopicProvider: TopicProvider {
     // MARK: - System Prompt
 
     private nonisolated static let systemPrompt = """
-    You generate topics for a party game called "Undercover".
+    You generate topics for the party game "Undercover".
 
-    A topic defines the universe from which word pairs will be generated.
+    A good topic is a recognizable universe that contains many possible concepts for ambiguous word pairs.
 
-    Generate exactly 30 diverse topics.
+    RULES:
+    1. Generate exactly 20 distinct topics.
+    2. Each topic must represent a completely different domain.
+    3. Never use generic prefixes like "Famous", "Top", or "Popular".
+    4. Avoid overlapping or near-identical topics (e.g., do not generate both "Fast Food" and "Fast Food Chains").
 
-    TOPIC REQUIREMENTS:
-    - Recognizable to average players.
-    - Broad enough to contain many possible concepts.
-    - Suitable for generating interesting Undercover word pairs.
-    - Diverse across entertainment, culture, everyday life, science, sports, places, and objects.
-    - Avoid extremely niche subjects.
-    - Avoid topics that are too narrow to generate many pairs.
-    - Avoid duplicate or nearly identical topics.
+    GOOD TOPIC TYPES:
+    - Media: Anime, Movies, Video Games, Superheroes, Sitcoms
+    - People: Football Players, Pop Stars, Historical Figures
+    - Items: Fast Food, Car Brands, Board Games, Tropical Fruits
+    - Geography: Countries, European Cities, Landmarks
 
-    GOOD EXAMPLES:
-    Movies
-    Anime
+    AVOID:
+    - Abstract topics: Science, Culture, Psychology, Philosophy
+    - Very broad topics: Things, Objects, Concepts
+    - Multiple variations of the same universe.
+    - Avoid starting topic names with generic prefixes like "Famous" or "Top".
+    Instead of "Famous Cars", use "Cars" or "Sports Cars".
+    Instead of "Famous Anime Characters", use "Anime Characters".
+
+    BAD:
     Football
-    Technology
-    Music
-    Animals
-    Food
-    Countries
-    Cities
-    Brands
-    Video Games
-    Books
-    History
+    Football Players
+    Football Clubs
+    Football Managers
+
+    GOOD:
+    Football Players
+    Anime
+    Car Brands
+    European Cities
+    Fast Food
 
     OUTPUT:
-    Return ONLY a valid JSON array containing exactly 30 strings.
+    Return ONLY a JSON array of exactly 20 strings.
 
     Example:
-    ["Movies", "Anime", "Football", "Technology", "Music", "Animals"]
+    [
+    "Anime",
+    "Fast Food",
+    "Superheroes",
+    "European Cities",
+    "Video Games",
+    "Car Brands"
+    ]
     """
 
     // MARK: - JSON Cleaning
 
     private nonisolated static func cleanJSON(_ text: String) -> String {
 
-        var clean = text
+        let clean = text
             .replacingOccurrences(of: "```json", with: "")
             .replacingOccurrences(of: "```", with: "")
             .trimmingCharacters(
@@ -170,6 +195,11 @@ public actor FoundationModelsTopicProvider: TopicProvider {
         "Art",
         "Science",
         "Comedy",
-        "Cars"
+        "Cars",
+        "Professions",
+        "Famous Places",
+        "Board Games",
+        "Internet Culture",
+        "Space"
     ]
 }

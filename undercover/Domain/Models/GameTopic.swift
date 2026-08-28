@@ -7,24 +7,23 @@
 
 import Foundation
 
-public struct GameTopic: Identifiable, Hashable, Sendable {
+// MARK: - Models
 
-    public let id: String
-    public let name: String
-    public let source: Source
+/// Represents a game topic.
+public struct GameTopic: Hashable, Identifiable {
+    public let id: String       // Normalized identifier
+    public let name: String     // Display name
+    public let source: TopicSource
 
-    public enum Source: Sendable {
-        case local
-        case ai
-    }
-
-    public init(
-        id: String,
-        name: String,
-        source: Source
-    ) {
+    public init(id: String, name: String, source: TopicSource) {
         self.id = id
         self.name = name
         self.source = source
     }
+}
+
+/// Source of a topic.
+public enum TopicSource: String, Hashable {
+    case local
+    case ai
 }

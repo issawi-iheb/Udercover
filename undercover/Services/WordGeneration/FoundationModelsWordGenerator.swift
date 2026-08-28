@@ -3,7 +3,6 @@
 //  undercoverApp
 //
 //  Uses Apple's on-device FoundationModels (iOS 26+, Apple Intelligence).
-//  Optimized for token efficiency and lightweight Swift-side filtering.
 //
 
 import Foundation
@@ -13,529 +12,377 @@ import FoundationModels
 #endif
 
 public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
-    
+
     public let generatorName = "Apple Intelligence (On-Device)"
-    
+
     private var cache: [String: [WordPair]] = [:]
-    
-    // MARK: - System Prompt
-    
-    private nonisolated static let baseSystemPrompt = """
-    You generate word pairs for "Undercover", a social-deduction game.
-    
-    GAMEPLAY GOAL:
-    The game is fun when players hesitate over their clues.
-    
-    Generate two DIFFERENT concepts where at least 3 natural clues can honestly describe BOTH.
-    
-    Imagine a player has concept A and wants to give a clue that:
-    1. proves they know A
-    2. but could ALSO honestly describe concept B
-    
-    A strong pair creates this hesitation multiple times.
-    
-    EXAMPLE:
-    Batman / Sherlock Holmes
-    
-    Possible shared clues:
-    - detective
-    - mysterious
-    - intelligent
-    - iconic
-    - dark
-    - crime-fighting
-    
-    Both concepts are distinct, but their clue spaces overlap.
-    
-    THE CLUE TEST — MOST IMPORTANT:
-    Before accepting a pair, mentally test at least 3 realistic clues.
-    
-    For every clue ask:
-    "Would a normal player honestly use this clue for BOTH concepts?"
-    
-    If 3+ clues naturally fit both → ACCEPT.
-    
-    If the overlap depends on trivia, technical knowledge,
-    obscure fandom knowledge, or a forced interpretation → REJECT.
-    
-    Meaningful shared clues can come from:
-    - identity
-    - personality
-    - role
-    - appearance
-    - behavior
-    - reputation
-    - symbolism
-    - cultural meaning
-    - emotional association
-    - environment
-    - archetype
-    
-    DO NOT COUNT THESE AS MEANINGFUL OVERLAP:
-    - same actor
-    - same voice actor
-    - same creator
-    - same author
-    - same director
-    - same studio
-    - same company
-    - same release year
-    - same country
-    - same production team
-    - same genre alone
-    - both belonging to a broad category
-    - obscure trivia
-    
-    IDENTITY CONTAINMENT RULE:
-    The two concepts must be genuinely separate entities.
-    
-    NEVER pair a concept with something that is part of it.
-    
-    REJECT:
-    - Batman / Bruce Wayne
-    - Game of Thrones / Jon Snow
-    - Apple / iPhone
-    - Sherlock Holmes / BBC Sherlock
-    - Star Wars / Darth Vader
-    - Pokémon / Pikachu
-    - Harry Potter / Hogwarts
-    - Marvel / Spider-Man
-    
-    ALSO REJECT:
-    - original / sequel
-    - original / remake
-    - series / episode
-    - franchise / spin-off
-    - franchise / character
-    - universe / character
-    - book / character
-    - movie / character
-    - game / character
-    - category / individual member
-    - parent brand / simple product instance
-    
-    GOOD:
-    - Batman / Sherlock Holmes
-    - Sherlock Holmes / Hercule Poirot
-    - Game of Thrones / The Witcher
-    - Apple / Microsoft
-    - Coca-Cola / Pepsi
-    
-    CONCEPT LEVEL:
-    Both concepts should normally exist at the same conceptual level.
-    
-    VALID:
-    - character ↔ character
-    - movie ↔ movie
-    - series ↔ series
-    - franchise ↔ franchise
-    - brand ↔ brand
-    - city ↔ city
-    - country ↔ country
-    - animal ↔ animal
-    - food ↔ food
-    - athlete ↔ athlete
-    - team ↔ team
-    - product ↔ product
-    
-    INVALID:
-    - series ↔ character
-    - franchise ↔ character
-    - brand ↔ product
-    - movie ↔ character
-    - universe ↔ character
-    - category ↔ individual member
-    - book ↔ character
-    - game ↔ character
-    
-    If a strong pair cannot be found at the same conceptual level,
-    REJECT the candidate instead of relaxing this rule.
-    
-    TOPIC:
-    Both concepts must directly belong to the requested topic.
-    
-    Interpret the topic according to its natural meaning.
-    
-    Examples:
-    
-    Anime:
-    - anime characters
-    - anime series
-    - anime films
-    
-    Movies:
-    - films
-    - movie characters only if the topic explicitly allows characters
-    
-    Brands:
-    - brands
-    
-    Football:
-    - football players
-    - football teams
-    - football competitions
-    - football concepts
-    
-    Food:
-    - foods
-    - dishes
-    - ingredients
-    
-    Cars:
-    - car brands
-    - car models
-    
-    Mythology:
-    - gods
-    - heroes
-    - creatures
-    - mythological figures
-    
-    Do NOT drift into games, merchandise, actors, creators,
-    companies, locations, or adjacent concepts unless they clearly
-    belong directly to the requested topic.
-    
-    RELATIONSHIP:
-    The relationship should explain WHY the pair creates useful
-    overlapping clues.
-    
-    Good relationship types include:
-    - shared archetype
-    - similar role
-    - iconic rivals
-    - competing brands
-    - similar personality
-    - symbolic parallels
-    - similar cultural image
-    - similar emotional experience
-    - similar environment
-    - contrasting versions of the same archetype
-    - shared reputation
-    - shared behavior
-    - shared symbolism
-    
-    The relationship must be useful for gameplay.
-    
-    Do NOT use relationships based only on:
-    - same actor
-    - same creator
-    - same studio
-    - same release year
-    - same franchise
-    - obscure trivia
-    - technical metadata
-    
-    DIVERSITY:
-    Generate 10 different pairs.
-    
-    Avoid repeatedly using the same concept.
-    
-    Avoid repeatedly using the same relationship pattern.
-    
-    Vary the clue space and relationship type across the 10 pairs.
-    
-    Do not generate ten pairs that are all essentially the same relationship.
-    
-    RECOGNIZABILITY:
-    Prefer concepts known by average players.
-    
-    Avoid:
-    - obscure characters
-    - minor fictional characters
-    - niche references
-    - technical terminology
-    - deep fandom knowledge
-    - extremely regional references
-    
-    DIFFICULTY:
-    
-    easy:
-    Obvious shared clues.
-    Players quickly understand why both concepts fit.
-    
-    medium:
-    Several natural shared clues.
-    Players need some discussion to decide which word is theirs.
-    
-    hard:
-    Subtle psychological, symbolic, cultural, emotional,
-    or archetypal overlap.
-    
-    HARD does NOT mean:
-    - obscure
-    - extremely niche
-    - synonyms
-    - almost identical concepts
-    - same franchise
-    - same entity
-    - direct translations
-    
-    HARD means:
-    The concepts are clearly different, but their deeper
-    characteristics create unexpected clue overlap.
-    
-    TRANSLATION:
-    Generate the concepts in English first.
-    
-    Output exactly these five language keys:
-    "en", "fr", "es", "ar", "tn"
-    
-    fr = French
-    es = Spanish
-    ar = Modern Standard Arabic
-    tn = Tunisian Arabic / Derja
-    
-    All five values must refer to the EXACT SAME CONCEPT.
-    
-    Use natural translations.
-    
-    Preserve famous names and brands when they normally remain unchanged.
-    
-    Do not translate a proper name into a different entity.
-    
-    SIMILARITY:
-    Estimate GAMEPLAY clue overlap, not dictionary similarity.
-    
-    Value must be between 0.00 and 1.00.
-    
-    easy: 0.40–0.54
-    medium: 0.55–0.69
-    hard: 0.70–1.00
-    
-    This is only a gameplay estimate.
-    
-    OUTPUT:
-    Return exactly 10 objects.
-    
-    Return valid JSON only.
-    
-    No markdown.
-    No code fences.
-    No explanation.
-    No comments.
-    No extra text.
-    
-    REQUIRED FORMAT:
-    
-    [
-      {
-        "civilian": {
-          "en": "Batman",
-          "fr": "Batman",
-          "es": "Batman",
-          "ar": "باتمان",
-          "tn": "Batman"
-        },
-        "undercover": {
-          "en": "Sherlock Holmes",
-          "fr": "Sherlock Holmes",
-          "es": "Sherlock Holmes",
-          "ar": "شيرلوك هولمز",
-          "tn": "Sherlock Holmes"
-        },
-        "similarity": 0.65,
-        "relation": "shared detective archetype"
-      }
-    ]
-    """
-    
+
     // MARK: - Availability
-    
+
     public var isAvailable: Bool {
 #if canImport(FoundationModels)
-        
+
         if #available(iOS 26.0, *) {
             return SystemLanguageModel.default.availability == .available
         }
-        
+
 #endif
-        
+
         return false
     }
-    
+
     // MARK: - Public API
-    
+
     public func randomPair(
         topic: String,
         language: AppLanguage,
         difficulty: PairDifficulty,
         excluding: Set<String>
     ) async throws -> WordPair {
-        
+
         guard isAvailable else {
             throw WordGeneratorError.unavailable(
                 "Apple Intelligence is not available on this device."
             )
         }
-        
+
         let normalizedTopic = topic
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        let key = "\(language.rawValue)|\(normalizedTopic)|\(difficulty.rawValue)"
-        
-        let normalizedExcluded = Set(
-            excluding.map {
-                Self.normalize($0)
-            }
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+
+        let cacheKey =
+            "\(language.rawValue)|\(normalizedTopic)|\(difficulty.rawValue)"
+
+        let excluded = Set(
+            excluding.map(Self.normalize)
         )
-        
-        func filtered(_ pairs: [WordPair]) -> [WordPair] {
-            pairs.filter { pair in
-                
-                let civilianKey = Self.normalize(
-                    pair.civilian.values["en"]
-                )
-                
-                let undercoverKey = Self.normalize(
-                    pair.undercover.values["en"]
-                )
-                
-                return !normalizedExcluded.contains(civilianKey)
-                && !normalizedExcluded.contains(undercoverKey)
-            }
-        }
-        
+
+        print("""
+        🧠 FoundationModels
+        Topic: \(normalizedTopic)
+        Difficulty: \(difficulty.rawValue)
+        Excluded: \(excluding.sorted().joined(separator: ", "))
+        """)
+
         // ---------------------------------------------------------
-        // 1. Try existing cache
+        // 1. CHECK CACHE
         // ---------------------------------------------------------
-        
-        var available = filtered(
-            cache[key] ?? []
-        )
-        
-        if let pair = available.randomElement() {
+
+        if let pair = firstAvailablePair(
+            from: cache[cacheKey] ?? [],
+            excluding: excluded
+        ) {
+
+            print("""
+            ✅ Using cached generated pair:
+            \(pair.civilian.values["en"] ?? "?")
+            /
+            \(pair.undercover.values["en"] ?? "?")
+            """)
+
             return pair
         }
-        
+
         // ---------------------------------------------------------
-        // 2. Generate with one retry
+        // 2. GENERATE UNTIL WE FIND A NEW PAIR
         // ---------------------------------------------------------
-        
-        var attempts = 0
-        
-        while attempts < 2 {
-            
-            attempts += 1
-            
+
+        let maxAttempts = 10
+
+        for attempt in 1...maxAttempts {
+
+            print(
+                "🤖 Generating pairs — attempt \(attempt)/\(maxAttempts)"
+            )
+
             do {
-                
-                let fresh = try await fetchViaLLM(
+
+                let freshPairs = try await fetchViaLLM(
                     topic: normalizedTopic,
                     language: language,
                     difficulty: difficulty,
-                    excluding: excluding
+                    excluding: excluding,
+                    attempt: attempt
                 )
-                
-                cache[key, default: []].append(
-                    contentsOf: fresh
+
+                print(
+                    "🤖 Model returned \(freshPairs.count) valid candidates"
                 )
-                
-                available = filtered(fresh)
-                
-                if let pair = available.randomElement() {
+
+                // -------------------------------------------------
+                // Find a genuinely unused pair
+                // -------------------------------------------------
+
+                if let pair = firstAvailablePair(
+                    from: freshPairs,
+                    excluding: excluded
+                ) {
+
+                    print("""
+                    ✅ Selected NEW generated pair:
+                    \(pair.civilian.values["en"] ?? "?")
+                    /
+                    \(pair.undercover.values["en"] ?? "?")
+                    """)
+
+                    // -------------------------------------------------
+                    // Cache ONLY genuinely new pairs.
+                    // -------------------------------------------------
+
+                    var cachedPairs = cache[cacheKey, default: []]
+
+                    let existingConcepts = Set(
+                        cachedPairs.flatMap { pair in
+                            [
+                                Self.normalize(
+                                    pair.civilian.values["en"]
+                                ),
+                                Self.normalize(
+                                    pair.undercover.values["en"]
+                                )
+                            ]
+                        }
+                    )
+
+                    let newPairs = freshPairs.filter { candidate in
+
+                        let civilian = Self.normalize(
+                            candidate.civilian.values["en"]
+                        )
+
+                        let undercover = Self.normalize(
+                            candidate.undercover.values["en"]
+                        )
+
+                        guard !excluded.contains(civilian),
+                              !excluded.contains(undercover)
+                        else {
+                            return false
+                        }
+
+                        return !existingConcepts.contains(civilian) &&
+                               !existingConcepts.contains(undercover)
+                    }
+
+                    cachedPairs.append(contentsOf: newPairs)
+
+                    if cachedPairs.count > 30 {
+                        cachedPairs = Array(
+                            cachedPairs.suffix(30)
+                        )
+                    }
+
+                    cache[cacheKey] = cachedPairs
+
                     return pair
                 }
-                
+
+                print("""
+                ⚠️ Attempt \(attempt):
+                All generated pairs were already used.
+                """)
+
             } catch {
-                
-                // Retry once if the model produced invalid JSON
-                // or no valid pairs.
-                if attempts >= 2 {
+
+                print("""
+                ⚠️ Attempt \(attempt) failed:
+                \(error.localizedDescription)
+                """)
+
+                // Don't immediately fail.
+                // Give the model another chance.
+                if attempt == maxAttempts {
                     throw error
                 }
             }
         }
-        
+
         throw WordGeneratorError.noPairsAvailable
     }
-    
+
+    // MARK: - Pair Filtering
+
+    private nonisolated func firstAvailablePair(
+        from pairs: [WordPair],
+        excluding excluded: Set<String>
+    ) -> WordPair? {
+
+        for pair in pairs {
+
+            let civilian = Self.normalize(
+                pair.civilian.values["en"]
+            )
+
+            let undercover = Self.normalize(
+                pair.undercover.values["en"]
+            )
+
+            let civilianExcluded =
+                Self.matchesExcluded(
+                    civilian,
+                    excluded: excluded
+                )
+
+            let undercoverExcluded =
+                Self.matchesExcluded(
+                    undercover,
+                    excluded: excluded
+                )
+
+            if civilianExcluded || undercoverExcluded {
+
+                let matchedSide: String
+
+                if civilianExcluded && undercoverExcluded {
+                    matchedSide = "civilian + undercover"
+                } else if civilianExcluded {
+                    matchedSide = "civilian"
+                } else {
+                    matchedSide = "undercover"
+                }
+
+                print("""
+                🚫 Rejected pair:
+                \(pair.civilian.values["en"] ?? "?")
+                /
+                \(pair.undercover.values["en"] ?? "?")
+
+                Match:
+                \(matchedSide)
+                """)
+
+                continue
+            }
+
+            return pair
+        }
+
+        return nil
+    }
+
+    // MARK: - Exclusion Matching
+
+    private nonisolated static func matchesExcluded(
+        _ candidate: String,
+        excluded: Set<String>
+    ) -> Bool {
+
+        guard !candidate.isEmpty else {
+            return true
+        }
+
+        for excludedValue in excluded {
+
+            if candidate == excludedValue {
+                return true
+            }
+
+            let candidateTokens = Set(
+                candidate.split(separator: " ")
+                    .map(String.init)
+            )
+
+            let excludedTokens = Set(
+                excludedValue.split(separator: " ")
+                    .map(String.init)
+            )
+
+            // Example:
+            // "naruto" vs "naruto uzumaki"
+            //
+            // "demon slayer" vs
+            // "demon slayer kimetsu no yaiba"
+
+            if candidateTokens.isSubset(of: excludedTokens) ||
+               excludedTokens.isSubset(of: candidateTokens) {
+
+                return true
+            }
+        }
+
+        return false
+    }
+
     // MARK: - LLM Query
-    
+
     private func fetchViaLLM(
         topic: String,
         language: AppLanguage,
         difficulty: PairDifficulty,
-        excluding: Set<String>
+        excluding: Set<String>,
+        attempt: Int
     ) async throws -> [WordPair] {
-        
+
 #if canImport(FoundationModels)
-        
+
         guard #available(iOS 26.0, *) else {
             throw WordGeneratorError.unavailable(
                 "Apple Intelligence requires iOS 26 or newer."
             )
         }
-        
+
         let session = LanguageModelSession(
-            instructions: Self.baseSystemPrompt
+            instructions: WordPairPromptBuilder.systemPrompt
         )
-        
+
         let topicValue = topic.isEmpty
-        ? "General Everyday Concepts"
-        : topic
-        
-        let exclusionText: String
-        
-        if excluding.isEmpty {
-            exclusionText = ""
-        } else {
-            exclusionText = """
-            EXCLUDE THESE CONCEPTS:
-            \(excluding.sorted().joined(separator: ", "))
-            
-            Do not use any of these concepts in either side of a pair.
-            """
-        }
-        
-        let prompt = """
-        TOPIC: \(topicValue)
-        
-        DIFFICULTY: \(difficulty.rawValue)
-        
-        \(exclusionText)
-        
-        Generate exactly 10 pairs.
-        
-        Remember:
-        - Every pair must create real clue ambiguity.
-        - Every pair must contain two distinct concepts.
-        - Never use identity containment.
-        - Never mix incompatible conceptual levels.
-        - Stay directly within the topic.
-        - Use different relationship types.
-        - Return JSON only.
-        """
-        
+            ? DefaultTopic.value
+            : topic
+
+        let prompt = WordPairPromptBuilder.build(
+            topic: topicValue,
+            difficultyLabel: difficulty.rawValue,
+            excluding: excluding,
+            attempt: attempt
+        )
+
+        print("""
+        📝 Prompt:
+        \(prompt)
+        """)
+
         let response = try await session.respond(
             to: prompt
         )
-        
+
+        print("""
+        🤖 Raw model response:
+        \(response.content)
+        """)
+
         return try Self.parseAndValidateJSON(
             response.content,
             topic: topicValue,
             difficulty: difficulty
         )
-        
+
 #else
-        
+
         throw WordGeneratorError.unavailable(
             "Apple Intelligence is not available on this platform."
         )
-        
+
 #endif
     }
-    
+
     // MARK: - JSON Parsing & Validation
-    
+
     private nonisolated static func parseAndValidateJSON(
         _ text: String,
         topic: String,
         difficulty: PairDifficulty
     ) throws -> [WordPair] {
-        
+
+        var rejectionReasons: [String: Int] = [:]
+
         var clean = text
             .replacingOccurrences(
                 of: "```json",
+                with: ""
+            )
+            .replacingOccurrences(
+                of: "```JSON",
                 with: ""
             )
             .replacingOccurrences(
@@ -545,348 +392,329 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
             .trimmingCharacters(
                 in: .whitespacesAndNewlines
             )
-        
+
         // ---------------------------------------------------------
-        // Extract JSON array if model added surrounding text.
+        // Extract JSON array
         // ---------------------------------------------------------
-        
+
         if let start = clean.firstIndex(of: "["),
            let end = clean.lastIndex(of: "]"),
            start < end {
-            
+
             clean = String(
                 clean[start...end]
             )
         }
-        
+
         guard let data = clean.data(
             using: .utf8
         ) else {
-            throw WordGeneratorError.parsingFailed(clean)
-        }
-        
-        // ---------------------------------------------------------
-        // Flexible JSON model.
-        //
-        // Accepts both:
-        //
-        // "civilian": "Batman"
-        //
-        // and:
-        //
-        // "civilian": {
-        //     "en": "Batman",
-        //     ...
-        // }
-        //
-        // The second format is preferred.
-        // ---------------------------------------------------------
-        
-        struct RawPair: Decodable {
-            
-            let civilian: FlexibleValue
-            let undercover: FlexibleValue
-            let similarity: Double?
-            let relation: String?
-            
-            enum FlexibleValue: Decodable {
-                
-                case string(String)
-                case dictionary([String: String])
-                
-                init(from decoder: Decoder) throws {
-                    
-                    let container =
-                    try decoder.singleValueContainer()
-                    
-                    if let dictionary = try? container.decode(
-                        [String: String].self
-                    ) {
-                        self = .dictionary(dictionary)
-                        return
-                    }
-                    
-                    if let string = try? container.decode(
-                        String.self
-                    ) {
-                        self = .string(string)
-                        return
-                    }
-                    
-                    throw DecodingError.typeMismatch(
-                        FlexibleValue.self,
-                        DecodingError.Context(
-                            codingPath: decoder.codingPath,
-                            debugDescription:
-                                "Expected String or [String: String]"
-                        )
-                    )
-                }
-                
-                func toDictionary() -> [String: String] {
-                    
-                    switch self {
-                            
-                        case .dictionary(let dictionary):
-                            return dictionary
-                            
-                        case .string(let value):
-                            
-                            // Legacy/simple response.
-                            //
-                            // We duplicate the value across languages
-                            // so the pair can still be parsed.
-                            //
-                            // This is intentionally accepted only as
-                            // a parser fallback.
-                            
-                            return [
-                                "en": value,
-                                "fr": value,
-                                "es": value,
-                                "ar": value,
-                                "tn": value
-                            ]
-                    }
-                }
-            }
-        }
-        
-        guard let rawPairs = try? JSONDecoder().decode(
-            [RawPair].self,
-            from: data
-        ) else {
-            
+
             throw WordGeneratorError.parsingFailed(
                 clean
             )
         }
-        
+
+        // ---------------------------------------------------------
+        // Flexible similarity
+        //
+        // Small models sometimes return:
+        //
+        // "similarity": 0.75
+        //
+        // but sometimes:
+        //
+        // "similarity": "genre"
+        //
+        // We do NOT let one bad pair destroy the entire response.
+        // ---------------------------------------------------------
+
+        struct RawPair: Decodable {
+
+            let civilian: String
+            let undercover: String
+            let similarity: FlexibleDouble?
+        }
+
+        guard let rawPairs = try? JSONDecoder().decode(
+            [RawPair].self,
+            from: data
+        ) else {
+
+            print("""
+            ❌ Could not decode model response:
+            \(clean)
+            """)
+
+            throw WordGeneratorError.parsingFailed(
+                clean
+            )
+        }
+
         var seen = Set<String>()
         var pairs: [WordPair] = []
-        
-        let requiredLanguages = [
-            "en",
-            "fr",
-            "es",
-            "ar",
-            "tn"
-        ]
-        
+
         // ---------------------------------------------------------
-        // Validate each candidate.
+        // Validate candidates
         // ---------------------------------------------------------
-        
+
         for raw in rawPairs {
-            
-            let civilianValues =
-            raw.civilian.toDictionary()
-            
-            let undercoverValues =
-            raw.undercover.toDictionary()
-            
+
             let civilianEN = normalize(
-                civilianValues["en"]
+                raw.civilian
             )
-            
+
             let undercoverEN = normalize(
-                undercoverValues["en"]
+                raw.undercover
             )
-            
+
             // -----------------------------------------------------
-            // 1. Non-empty
+            // 1. Empty
             // -----------------------------------------------------
-            
+
             guard !civilianEN.isEmpty,
                   !undercoverEN.isEmpty else {
+
+                rejectionReasons["empty", default: 0] += 1
                 continue
             }
-            
+
             // -----------------------------------------------------
-            // 2. Exact same concept
+            // 2. Same concept
             // -----------------------------------------------------
-            
+
             guard civilianEN != undercoverEN else {
+
+                rejectionReasons["same_concept", default: 0] += 1
                 continue
             }
-            
+
             // -----------------------------------------------------
-            // 3. Obvious token containment
-            //
-            // Example:
-            // "Star Trek"
-            // "Star Trek Voyager"
-            //
-            // "Naruto"
-            // "Naruto Shippuden"
+            // 3. Token containment
             // -----------------------------------------------------
-            
+
             let civilianTokens = Set(
-                civilianEN.components(
-                    separatedBy: .whitespaces
-                )
+                civilianEN
+                    .split(separator: " ")
+                    .map(String.init)
             )
-            
+
             let undercoverTokens = Set(
-                undercoverEN.components(
-                    separatedBy: .whitespaces
-                )
+                undercoverEN
+                    .split(separator: " ")
+                    .map(String.init)
             )
-            
+
             if civilianTokens.isSubset(
                 of: undercoverTokens
             ) ||
-                undercoverTokens.isSubset(
-                    of: civilianTokens
-                ) {
+            undercoverTokens.isSubset(
+                of: civilianTokens
+            ) {
+
+                rejectionReasons["token_containment", default: 0] += 1
                 continue
             }
-            
+
             // -----------------------------------------------------
-            // 4. Deduplicate concepts inside this batch.
+            // 4. Duplicate inside response
             // -----------------------------------------------------
-            
+
             guard !seen.contains(civilianEN),
                   !seen.contains(undercoverEN) else {
+
+                rejectionReasons["duplicate", default: 0] += 1
                 continue
             }
-            
+
             // -----------------------------------------------------
-            // 5. Translation validation
+            // 5. Similarity
             // -----------------------------------------------------
-            
-            var validTranslations = true
-            
-            for language in requiredLanguages {
-                
-                guard
-                    let civilianValue =
-                        civilianValues[language]?
-                        .trimmingCharacters(
-                            in: .whitespacesAndNewlines
-                        ),
-                    
-                        let undercoverValue =
-                        undercoverValues[language]?
-                        .trimmingCharacters(
-                            in: .whitespacesAndNewlines
-                        ),
-                    
-                        !civilianValue.isEmpty,
-                    !undercoverValue.isEmpty
-                        
-                else {
-                    validTranslations = false
-                    break
-                }
-            }
-            
-            guard validTranslations else {
+
+            guard let similarity = raw.similarity?.value else {
+
+                rejectionReasons["invalid_similarity", default: 0] += 1
+
+                print("""
+                🚫 Rejected pair:
+                \(raw.civilian) / \(raw.undercover)
+                Reason: invalid similarity
+                """)
+
                 continue
             }
-            
-            // -----------------------------------------------------
-            // 6. Reject identical translations
-            //
-            // This catches cases where two concepts collapse
-            // into the same translated value.
-            // -----------------------------------------------------
-            
-            var translationCollision = false
-            
-            for language in requiredLanguages {
-                
-                let civilianValue = normalize(
-                    civilianValues[language]
-                )
-                
-                let undercoverValue = normalize(
-                    undercoverValues[language]
-                )
-                
-                if !civilianValue.isEmpty,
-                   civilianValue == undercoverValue {
-                    
-                    translationCollision = true
-                    break
-                }
-            }
-            
-            guard !translationCollision else {
+
+            guard similarity >= 0.0,
+                  similarity <= 1.0 else {
+
+                rejectionReasons["invalid_similarity", default: 0] += 1
                 continue
             }
-            
+
             // -----------------------------------------------------
-            // 7. Similarity
+            // 6. Difficulty validation
             // -----------------------------------------------------
-            
-            let similarity: Double?
-            
-            if let value = raw.similarity,
-               value >= 0.0,
-               value <= 1.0 {
-                
-                similarity = value
-                
-            } else {
-                
-                similarity = nil
+
+            let validRange = difficulty.scoreRange
+
+            guard validRange.contains(similarity) else {
+
+                rejectionReasons["wrong_difficulty", default: 0] += 1
+
+                print("""
+                🚫 Rejected pair:
+                \(raw.civilian) / \(raw.undercover)
+                Similarity: \(similarity)
+                Expected: \(validRange)
+                """)
+
+                continue
             }
-            
+
             // -----------------------------------------------------
-            // 8. Build domain objects
+            // 7. Build WordPair
             // -----------------------------------------------------
-            
+
             let civilian = LocalizedWord(
-                values: civilianValues
+                values: buildTranslations(
+                    raw.civilian
+                )
             )
-            
+
             let undercover = LocalizedWord(
-                values: undercoverValues
+                values: buildTranslations(
+                    raw.undercover
+                )
             )
-            
+
             let pair = WordPair(
                 civilian: civilian,
                 undercover: undercover,
                 topic: topic,
                 similarity: similarity
             )
-            
+
             pairs.append(pair)
-            
+
             seen.insert(civilianEN)
             seen.insert(undercoverEN)
         }
-        
+
         // ---------------------------------------------------------
-        // At least one valid pair must survive.
+        // Logging
         // ---------------------------------------------------------
-        
+
+        print("""
+        🔎 Validation:
+        Generated: \(rawPairs.count)
+        Valid: \(pairs.count)
+        """)
+
+        if !rejectionReasons.isEmpty {
+
+            let reasons = rejectionReasons
+                .sorted {
+                    $0.value > $1.value
+                }
+
+            for (reason, count) in reasons {
+                print(
+                    "  - \(reason): \(count)"
+                )
+            }
+        }
+
         guard !pairs.isEmpty else {
+
+            print("""
+            ❌ No valid pairs generated
+            Topic: \(topic)
+            Difficulty: \(difficulty.rawValue)
+            """)
+
             throw WordGeneratorError.noPairsAvailable
         }
-        
+
+        print("""
+        ✅ Generated \(pairs.count) valid pairs
+        Topic: \(topic)
+        Difficulty: \(difficulty.rawValue)
+        """)
+
         return pairs
     }
-    
+
+    // MARK: - Flexible Similarity
+
+    private struct FlexibleDouble: Decodable {
+
+        let value: Double?
+
+        init(from decoder: Decoder) throws {
+
+            let container = try decoder.singleValueContainer()
+
+            if let number = try? container.decode(Double.self) {
+                value = number
+                return
+            }
+
+            if let string = try? container.decode(String.self),
+               let number = Double(string) {
+
+                value = number
+                return
+            }
+
+            // Example:
+            // "similarity": "genre"
+            //
+            // We don't fail the whole JSON.
+            // This individual pair will simply be rejected.
+
+            value = nil
+        }
+    }
+
     // MARK: - Normalization
-    
+
     private nonisolated static func normalize(
         _ value: String?
     ) -> String {
-        
+
         guard let value else {
             return ""
         }
-        
-        return value
-            .trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
+
+        let normalized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .folding(
                 options: .diacriticInsensitive,
                 locale: .current
             )
+
+        return normalized
+            .split { character in
+                character.isWhitespace ||
+                character.isPunctuation ||
+                character.isSymbol
+            }
+            .joined(separator: " ")
+    }
+
+    // MARK: - Translations
+
+    private nonisolated static func buildTranslations(
+        _ value: String
+    ) -> [String: String] {
+
+        [
+            "en": value,
+            "fr": value,
+            "es": value,
+            "ar": value,
+            "tn": value
+        ]
     }
 }

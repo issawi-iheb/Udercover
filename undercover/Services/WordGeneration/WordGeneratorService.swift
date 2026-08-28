@@ -2,12 +2,19 @@
 //  WordGeneratorService.swift
 //  undercoverApp
 //
-//  Actor that iterates the generator chain in priority order.
-//  Each generator is itself an actor, so all cache access is data-race-free.
+//  Orchestrates the generator chain.
+//  Tries each generator in priority order until one succeeds.
 //
 
 import Foundation
 
+/// Service that orchestrates a chain of word-pair generators.
+///
+/// Tries generators in priority order:
+/// 1. Local (fast, deterministic, limited)
+/// 2. LLM (slower, creative, unlimited)
+///
+/// Returns the first successful result.
 public actor WordGeneratorService {
 
     private let generators: [any WordGeneratorProtocol]
@@ -16,33 +23,52 @@ public actor WordGeneratorService {
         self.generators = generators
     }
 
-    // MARK: - Public
-
+    /// Get a word pair by trying each generator in sequence.
+    ///
+    /// - Parameters:
+    ///   - topic: Topic/category for the pair
+    ///   - language: Requested language
+    ///   - difficulty: Requested difficulty (easy/medium/hard)
+    ///   - excluding: Set of already-used concepts (normalized)
+    ///
+    /// - Returns: First successful WordPair
+    /// - Throws: Last error if all generators fail
     public func randomPair(
-        topic:      String,
-        language:   AppLanguage,
+        topic: String,
+        language: AppLanguage,
         difficulty: PairDifficulty,
-        excluding:  Set<String>
+        excluding: Set<String>
     ) async throws -> WordPair {
 
         var lastError: Error = WordGeneratorError.noPairsAvailable
 
         for generator in generators {
-            guard await generator.isAvailable else { continue }
+            guard await generator.isAvailable else {
+                print("⏭️ [\(await generator.generatorName)] Not available, skipping")
+                continue
+            }
 
             do {
                 let pair = try await generator.randomPair(
-                    topic:      topic,
-                    language:   language,
+                    topic: topic,
+                    language: language,
                     difficulty: difficulty,
-                    excluding:  excluding
+                    excluding: excluding
                 )
-                let civ = pair.civilian.localized(for: language)
-                let uc  = pair.undercover.localized(for: language)
-                print("✅ [\(await generator.generatorName)] \(civ) / \(uc) [\(pair.difficulty.label)]")
+
+                print("""
+                ✅ [\(await generator.generatorName)] Success
+                """)
+
                 return pair
+
             } catch {
-                print("⚠️ [\(await generator.generatorName)] \(error.localizedDescription)")
+                if error is CancellationError {
+                    throw error
+                }
+                print("""
+                ⚠️ [\(await generator.generatorName)] Failed: \(error.localizedDescription)
+                """)
                 lastError = error
             }
         }
@@ -50,9 +76,12 @@ public actor WordGeneratorService {
         throw lastError
     }
 
+    /// Get the name of the first available generator (for UI/debug).
     public func activeGeneratorName() async -> String {
         for generator in generators {
-            if await generator.isAvailable { return await generator.generatorName }
+            if await generator.isAvailable {
+                return await generator.generatorName
+            }
         }
         return "None"
     }

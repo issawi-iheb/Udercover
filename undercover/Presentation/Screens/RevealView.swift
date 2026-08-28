@@ -42,6 +42,7 @@ public struct RevealView: View {
                         wordContent.transition(.cardSlide)
                     }
                 }
+                .id(player.id)
                 .animation(.appSpring, value: step)
 
                 Spacer()
@@ -180,6 +181,7 @@ public struct RevealView: View {
                     onNext()
                 }
             )
+            .id(player.id)
             .padding(.horizontal, Space.xl)
         }
     }

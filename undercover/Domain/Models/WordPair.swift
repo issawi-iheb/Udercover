@@ -1,7 +1,8 @@
-//
 //  WordPair.swift
 //  undercoverApp
 //
+//
+
 
 import Foundation
 
@@ -41,6 +42,16 @@ public struct LocalizedWord: Codable, Hashable, Sendable {
     public var allValues: [String] {
         values.values.filter { !$0.isEmpty }
     }
+
+    /// Extract the first non-empty localized value for concept identity.
+    /// This is language-independent and deterministic.
+    public var firstNonEmpty: String {
+        // First, try to find any non-empty value (language-independent)
+        if let value = values.first(where: { !$0.value.isEmpty })?.value {
+            return value
+        }
+        return ""
+    }
 }
 
 // MARK: - WordPair
@@ -48,7 +59,12 @@ public struct LocalizedWord: Codable, Hashable, Sendable {
 public struct WordPair: Codable, Identifiable, Sendable {
 
     public var id: String {
-        "\(civilian.values["en"] ?? "")|\(undercover.values["en"] ?? "")"
+        // Use deterministic pair key for ID
+        let civilianConcept = civilian.firstNonEmpty
+        let undercoverConcept = undercover.firstNonEmpty
+        // Canonical pair key: min|max for consistent ordering
+        let (first, second) = (civilianConcept < undercoverConcept) ? (civilianConcept, undercoverConcept) : (undercoverConcept, civilianConcept)
+        return "\(first)|\(second)"
     }
 
     public let civilian:   LocalizedWord
@@ -62,10 +78,12 @@ public struct WordPair: Codable, Identifiable, Sendable {
         Self.classifier.classify(score: similarity ?? 0.62)
     }
 
-    /// Stable lowercase English civilian word used to track played pairs.
-    public var trackingKey: String {
-        (civilian.values[AppLanguage.english.rawValue] ?? civilian.values.values.first ?? "")
-            .lowercased()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Get the set of normalized concepts contained in this pair.
+    /// This contains BOTH civilian and undercover concepts.
+    public var concepts: Set<String> {
+        NormalizationUtility.conceptsFromPair(
+            civilian: civilian.firstNonEmpty,
+            undercover: undercover.firstNonEmpty
+        )
     }
 }

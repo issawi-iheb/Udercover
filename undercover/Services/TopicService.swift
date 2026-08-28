@@ -10,65 +10,59 @@ import Foundation
 public actor TopicService {
 
     private let repository: WordRepository
-    private let aiProvider: FoundationModelsTopicProvider
-
+    private let aiProvider: FoundationModelsTopicProvider?
     private var cachedTopics: [GameTopic] = []
-
 
     public init(
         repository: WordRepository = WordRepository(),
-        aiProvider: FoundationModelsTopicProvider = FoundationModelsTopicProvider()
+        aiProvider: FoundationModelsTopicProvider? = nil
     ) {
         self.repository = repository
         self.aiProvider = aiProvider
     }
 
-
-    // MARK: - Public
-
+    /// Get all topics (cached after first fetch).
     public func topics() async -> [GameTopic] {
-
         if !cachedTopics.isEmpty {
             return cachedTopics
         }
 
-
-        // Local topics
-        let localTopics = repository.topics.map {
+        // Local topics from repository
+        let localTopics = repository.topics.map { topic in
             GameTopic(
-                id: normalize($0),
-                name: $0.capitalized, source: .local
+                id: normalizeForID(topic),
+                name: topic.capitalized,
+                source: .local
             )
         }
 
-
-        // AI topics
-        let aiTopics = await aiProvider.topics()
-
-        let generatedTopics = aiTopics.map {
-            GameTopic(
-                id: normalize($0),
-                name: $0.capitalized, source: .ai
-            )
+        // AI-generated topics (if provider available)
+        var aiTopics: [GameTopic] = []
+        if let provider = aiProvider {
+            let aiNames = await provider.topics()
+            aiTopics = aiNames.map { topic in
+                GameTopic(
+                    id: normalizeForID(topic),
+                    name: topic.capitalized,
+                    source: .ai
+                )
+            }
         }
 
+        // Merge and deduplicate
+        let result = mergeTopics(localTopics, aiTopics)
 
-        // Merge
-        let result = merge(
-            localTopics,
-            generatedTopics
-        )
-
+        print("""
+        📚 [TopicService] Loaded \(result.count) topics
+        """)
 
         cachedTopics = result
-
         return result
     }
 
+    // MARK: - Private
 
-    // MARK: - Merge
-
-    private func merge(
+    private func mergeTopics(
         _ first: [GameTopic],
         _ second: [GameTopic]
     ) -> [GameTopic] {
@@ -76,40 +70,24 @@ public actor TopicService {
         var result: [GameTopic] = []
         var seen = Set<String>()
 
-
         for topic in first + second {
+            let id = topic.id
 
-            let key = normalize(topic.id)
+            guard !seen.contains(id) else { continue }
 
-            guard !seen.contains(key) else {
-                continue
-            }
-
-            seen.insert(key)
+            seen.insert(id)
             result.append(topic)
         }
 
-
-        return result.sorted {
-            $0.name < $1.name
-        }
+        return result.sorted { $0.name < $1.name }
     }
 
-
-    // MARK: - Normalization
-
-    private func normalize(_ value: String) -> String {
-
+    /// Normalize topic name to ID format (lowercase, dashes).
+    private func normalizeForID(_ value: String) -> String {
         value
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-            .folding(
-                options: .diacriticInsensitive,
-                locale: .current
-            )
-            .replacingOccurrences(
-                of: " ",
-                with: "-"
-            )
+            .folding(options: .diacriticInsensitive, locale: .current)
+            .replacingOccurrences(of: " ", with: "-")
     }
 }

@@ -1,18 +1,22 @@
 //
-//  LocalTopicProvider.swift
+//  TopicProvider.swift & TopicService.swift
 //  undercover
 //
-//  Created by Iheb on 14/08/2026.
+//  Provides topics from local repository and/or AI.
 //
 
 import Foundation
 
+// MARK: - Protocol
+
+/// Provides a list of topics/categories for the game.
 public protocol TopicProvider: Sendable {
-
     func topics() async -> [String]
-
 }
 
+// MARK: - Local Provider
+
+/// Provides topics from the local words.json repository.
 public actor LocalTopicProvider: TopicProvider {
 
     private let repository = WordRepository()
@@ -21,3 +25,6 @@ public actor LocalTopicProvider: TopicProvider {
         repository.topics
     }
 }
+
+// MARK: - Topic Service
+

@@ -2,8 +2,9 @@
 //  LocalWordGenerator.swift
 //  undercoverApp
 //
-//  Fully offline. Actor for Swift 6 safety.
-//  Strategy: WordRepository first → adjacent difficulty bands → static vocabulary generation.
+//  Fully offline generator. Actor for Swift 6 safety.
+//  Uses NormalizationUtility for concept identity.
+//  Strategy: WordRepository first → adjacent difficulty bands → fallback.
 //
 
 import Foundation
@@ -15,6 +16,13 @@ public actor LocalWordGenerator: WordGeneratorProtocol {
 
     private let repository = WordRepository()
 
+    // MARK: - Game Lifecycle
+
+    /// Call when a new game starts to reset session state.
+    public func resetGame() {
+        print("🔄 [Local] Reset for new game.")
+    }
+
     // MARK: - Protocol
 
     public func randomPair(
@@ -24,31 +32,28 @@ public actor LocalWordGenerator: WordGeneratorProtocol {
         excluding: Set<String>
     ) async throws -> WordPair {
 
-        // 1. Try the requested difficulty first.
+        print("""
+        🧠 [Local]
+        Topic: \(topic)
+        Difficulty: \(difficulty.rawValue)
+        Exclusions: \(excluding.count)
+        """)
+
         if let pair = repository.randomPair(
             topic: topic,
             language: language,
             difficulty: difficulty,
             excluding: excluding
         ) {
+            print("✅ [Local] Found pair")
             return pair
         }
 
-        // 2. If nothing is available, relax the difficulty.
-        for relaxedDifficulty in PairDifficulty.allCases
-        where relaxedDifficulty != difficulty {
+        print("""
+        ⚠️ [Local] No unused \(difficulty.rawValue) pairs available.
+        → Falling back to next generator.
+        """)
 
-            if let pair = repository.randomPair(
-                topic: topic,
-                language: language,
-                difficulty: relaxedDifficulty,
-                excluding: excluding
-            ) {
-                return pair
-            }
-        }
-
-        // 3. Nothing available.
         throw WordGeneratorError.noPairsAvailable
     }
 }
