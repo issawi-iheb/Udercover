@@ -250,7 +250,13 @@ public final class GameViewModel: ObservableObject {
         
         
         let topic = selectedTopic ?? ""
-
+        
+        wordPairProvider.prepareIfNeeded(
+            playerCount: players.count,
+            topic: topic,
+            language: selectedLanguage,
+            difficulty: selectedDifficulty
+        )
         let pair: WordPair
 
         do {

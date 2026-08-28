@@ -19,56 +19,6 @@ public protocol SemanticSimilarityProvider: Sendable {
     func similarity(between a: String, and b: String) async -> Double?
 }
 
-/// Asks Claude Haiku to rate similarity. Use sparingly — not in loops.
-public final class AnthropicSemanticProvider: SemanticSimilarityProvider {
-
-    private let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
-
-    public init() {}
-
-    public func similarity(between a: String, and b: String) async -> Double? {
-        guard Config.anthropicAPIKey.hasPrefix("sk-ant-"),
-              Config.anthropicAPIKey != "sk-ant-REPLACE_ME" else { return nil }
-
-        let prompt = """
-        Rate the semantic similarity between these two words from 0.0 (unrelated) to 1.0 (identical).
-        Respond with ONLY a decimal number.
-
-        Word 1: \(a)
-        Word 2: \(b)
-        """
-
-        let body: [String: Any] = [
-            "model":      "claude-haiku-4-5-20251001",
-            "max_tokens": 10,
-            "messages":   [["role": "user", "content": prompt]]
-        ]
-
-        var req = URLRequest(url: endpoint)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue(Config.anthropicAPIKey, forHTTPHeaderField: "x-api-key")
-        req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        req.timeoutInterval = 6
-
-        guard let (data, _) = try? await URLSession.shared.data(for: req) else { return nil }
-
-        struct Envelope: Decodable {
-            struct Block: Decodable { let type: String; let text: String? }
-            let content: [Block]
-        }
-        guard
-            let env  = try? JSONDecoder().decode(Envelope.self, from: data),
-            let text = env.content.first(where: { $0.type == "text" })?.text,
-            let val  = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)),
-            (0.0...1.0).contains(val)
-        else { return nil }
-
-        return val
-    }
-}
-
 // MARK: - Score
 
 public struct SimilarityScore: Sendable {

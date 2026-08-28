@@ -1,8 +1,7 @@
+//
 //  WordPair.swift
 //  undercoverApp
 //
-//
-
 
 import Foundation
 
@@ -27,7 +26,9 @@ public struct LocalizedWord: Codable, Hashable, Sendable {
     }
 
     public func localized(for language: AppLanguage) -> String {
-        if let value = values[language.rawValue], !value.isEmpty {
+
+        if let value = values[language.rawValue],
+           !value.isEmpty {
             return value
         }
 
@@ -36,21 +37,26 @@ public struct LocalizedWord: Codable, Hashable, Sendable {
             return english
         }
 
-        return values.values.first(where: { !$0.isEmpty }) ?? ""
+        return values.values.first {
+            !$0.isEmpty
+        } ?? ""
     }
 
     public var allValues: [String] {
-        values.values.filter { !$0.isEmpty }
+        values.values.filter {
+            !$0.isEmpty
+        }
     }
 
-    /// Extract the first non-empty localized value for concept identity.
-    /// This is language-independent and deterministic.
+    /// Deterministic concept representation.
+    ///
+    /// The actual language does not matter here.
+    /// We only need one stable value to identify the concept.
     public var firstNonEmpty: String {
-        // First, try to find any non-empty value (language-independent)
-        if let value = values.first(where: { !$0.value.isEmpty })?.value {
-            return value
-        }
-        return ""
+        values
+            .sorted(by: { $0.key < $1.key })
+            .compactMap { $0.value.isEmpty ? nil : $0.value }
+            .first ?? ""
     }
 }
 
@@ -59,28 +65,42 @@ public struct LocalizedWord: Codable, Hashable, Sendable {
 public struct WordPair: Codable, Identifiable, Sendable {
 
     public var id: String {
-        // Use deterministic pair key for ID
+
         let civilianConcept = civilian.firstNonEmpty
         let undercoverConcept = undercover.firstNonEmpty
-        // Canonical pair key: min|max for consistent ordering
-        let (first, second) = (civilianConcept < undercoverConcept) ? (civilianConcept, undercoverConcept) : (undercoverConcept, civilianConcept)
+
+        let first: String
+        let second: String
+
+        if civilianConcept < undercoverConcept {
+            first = civilianConcept
+            second = undercoverConcept
+        } else {
+            first = undercoverConcept
+            second = civilianConcept
+        }
+
         return "\(first)|\(second)"
     }
 
-    public let civilian:   LocalizedWord
+    public let civilian: LocalizedWord
     public let undercover: LocalizedWord
-    public let topic:      String
+    public let topic: String
     public let similarity: Double?
 
     private static let classifier = PairDifficultyClassifier()
 
     public var difficulty: PairDifficulty {
-        Self.classifier.classify(score: similarity ?? 0.62)
+        Self.classifier.classify(
+            score: similarity ?? 0.62
+        )
     }
 
-    /// Get the set of normalized concepts contained in this pair.
-    /// This contains BOTH civilian and undercover concepts.
+    /// All concepts represented by this pair.
+    ///
+    /// Both civilian and undercover concepts are included.
     public var concepts: Set<String> {
+
         NormalizationUtility.conceptsFromPair(
             civilian: civilian.firstNonEmpty,
             undercover: undercover.firstNonEmpty
