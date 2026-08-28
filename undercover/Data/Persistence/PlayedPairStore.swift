@@ -180,7 +180,9 @@ public actor PlayedPairStore {
                 }
             )
 
-        if (try? context.fetchCount(descriptor) ?? 0) > 0 {
+        if let count = try? context.fetchCount(descriptor),
+           count > 0 {
+            // Exact pair already played
             return false
         }
 

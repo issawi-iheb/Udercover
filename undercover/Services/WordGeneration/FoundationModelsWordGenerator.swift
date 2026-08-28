@@ -2,7 +2,8 @@
 //  FoundationModelsWordGenerator.swift
 //  undercoverApp
 //
-//  Uses Apple's on-device FoundationModels (iOS 26+, Apple Intelligence).
+//  Uses Apple's on-device FoundationModels.
+//  iOS 26+ / Apple Intelligence.
 //
 
 import Foundation
@@ -13,13 +14,13 @@ import FoundationModels
 
 public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
 
-    public let generatorName = "Apple Intelligence (On-Device)"
-
-    private var cache: [String: [WordPair]] = [:]
+    public let generatorName =
+        "Apple Intelligence (On-Device)"
 
     // MARK: - Availability
 
     public var isAvailable: Bool {
+
 #if canImport(FoundationModels)
 
         if #available(iOS 26.0, *) {
@@ -46,152 +47,78 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
             )
         }
 
-        let normalizedTopic = topic
-            .trimmingCharacters(
+        let normalizedTopic =
+            topic.trimmingCharacters(
                 in: .whitespacesAndNewlines
             )
 
-        let cacheKey =
-            "\(language.rawValue)|\(normalizedTopic)|\(difficulty.rawValue)"
-
-        let excluded = Set(
+        let normalizedExclusions = Set(
             excluding.map(Self.normalize)
         )
 
         print("""
-        🧠 FoundationModels
+        🧠 [FoundationModels]
         Topic: \(normalizedTopic)
         Difficulty: \(difficulty.rawValue)
-        Excluded: \(excluding.sorted().joined(separator: ", "))
+        Exclusions: \(normalizedExclusions.count)
         """)
-
-        // ---------------------------------------------------------
-        // 1. CHECK CACHE
-        // ---------------------------------------------------------
-
-        if let pair = firstAvailablePair(
-            from: cache[cacheKey] ?? [],
-            excluding: excluded
-        ) {
-
-            print("""
-            ✅ Using cached generated pair:
-            \(pair.civilian.values["en"] ?? "?")
-            /
-            \(pair.undercover.values["en"] ?? "?")
-            """)
-
-            return pair
-        }
-
-        // ---------------------------------------------------------
-        // 2. GENERATE UNTIL WE FIND A NEW PAIR
-        // ---------------------------------------------------------
 
         let maxAttempts = 10
 
         for attempt in 1...maxAttempts {
 
+            guard !Task.isCancelled else {
+                throw CancellationError()
+            }
+
             print(
-                "🤖 Generating pairs — attempt \(attempt)/\(maxAttempts)"
+                "🤖 [FoundationModels] Attempt \(attempt)/\(maxAttempts)"
             )
 
             do {
 
-                let freshPairs = try await fetchViaLLM(
+                let candidates = try await fetchViaLLM(
                     topic: normalizedTopic,
                     language: language,
                     difficulty: difficulty,
-                    excluding: excluding,
+                    excluding: normalizedExclusions,
                     attempt: attempt
                 )
 
                 print(
-                    "🤖 Model returned \(freshPairs.count) valid candidates"
+                    "🤖 Model returned \(candidates.count) valid candidates"
                 )
 
-                // -------------------------------------------------
-                // Find a genuinely unused pair
-                // -------------------------------------------------
-
                 if let pair = firstAvailablePair(
-                    from: freshPairs,
-                    excluding: excluded
+                    from: candidates,
+                    excluding: normalizedExclusions
                 ) {
 
                     print("""
-                    ✅ Selected NEW generated pair:
+                    ✅ [FoundationModels] Selected:
                     \(pair.civilian.values["en"] ?? "?")
                     /
                     \(pair.undercover.values["en"] ?? "?")
                     """)
 
-                    // -------------------------------------------------
-                    // Cache ONLY genuinely new pairs.
-                    // -------------------------------------------------
-
-                    var cachedPairs = cache[cacheKey, default: []]
-
-                    let existingConcepts = Set(
-                        cachedPairs.flatMap { pair in
-                            [
-                                Self.normalize(
-                                    pair.civilian.values["en"]
-                                ),
-                                Self.normalize(
-                                    pair.undercover.values["en"]
-                                )
-                            ]
-                        }
-                    )
-
-                    let newPairs = freshPairs.filter { candidate in
-
-                        let civilian = Self.normalize(
-                            candidate.civilian.values["en"]
-                        )
-
-                        let undercover = Self.normalize(
-                            candidate.undercover.values["en"]
-                        )
-
-                        guard !excluded.contains(civilian),
-                              !excluded.contains(undercover)
-                        else {
-                            return false
-                        }
-
-                        return !existingConcepts.contains(civilian) &&
-                               !existingConcepts.contains(undercover)
-                    }
-
-                    cachedPairs.append(contentsOf: newPairs)
-
-                    if cachedPairs.count > 30 {
-                        cachedPairs = Array(
-                            cachedPairs.suffix(30)
-                        )
-                    }
-
-                    cache[cacheKey] = cachedPairs
-
                     return pair
                 }
 
-                print("""
-                ⚠️ Attempt \(attempt):
-                All generated pairs were already used.
-                """)
+                print(
+                    "⚠️ All generated candidates conflict with exclusions"
+                )
+
+            } catch is CancellationError {
+
+                throw CancellationError()
 
             } catch {
 
                 print("""
-                ⚠️ Attempt \(attempt) failed:
+                ⚠️ [FoundationModels] Attempt \(attempt) failed:
                 \(error.localizedDescription)
                 """)
 
-                // Don't immediately fail.
-                // Give the model another chance.
                 if attempt == maxAttempts {
                     throw error
                 }
@@ -201,7 +128,7 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
         throw WordGeneratorError.noPairsAvailable
     }
 
-    // MARK: - Pair Filtering
+    // MARK: - Candidate Selection
 
     private nonisolated func firstAvailablePair(
         from pairs: [WordPair],
@@ -210,48 +137,32 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
 
         for pair in pairs {
 
-            let civilian = Self.normalize(
-                pair.civilian.values["en"]
-            )
-
-            let undercover = Self.normalize(
-                pair.undercover.values["en"]
-            )
-
-            let civilianExcluded =
-                Self.matchesExcluded(
-                    civilian,
-                    excluded: excluded
+            let civilian =
+                Self.normalize(
+                    pair.civilian.values["en"]
                 )
 
-            let undercoverExcluded =
-                Self.matchesExcluded(
-                    undercover,
-                    excluded: excluded
+            let undercover =
+                Self.normalize(
+                    pair.undercover.values["en"]
                 )
 
-            if civilianExcluded || undercoverExcluded {
+            guard !civilian.isEmpty,
+                  !undercover.isEmpty else {
+                continue
+            }
 
-                let matchedSide: String
+            guard !Self.matchesExcluded(
+                civilian,
+                excluded: excluded
+            ) else {
+                continue
+            }
 
-                if civilianExcluded && undercoverExcluded {
-                    matchedSide = "civilian + undercover"
-                } else if civilianExcluded {
-                    matchedSide = "civilian"
-                } else {
-                    matchedSide = "undercover"
-                }
-
-                print("""
-                🚫 Rejected pair:
-                \(pair.civilian.values["en"] ?? "?")
-                /
-                \(pair.undercover.values["en"] ?? "?")
-
-                Match:
-                \(matchedSide)
-                """)
-
+            guard !Self.matchesExcluded(
+                undercover,
+                excluded: excluded
+            ) else {
                 continue
             }
 
@@ -278,25 +189,26 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
                 return true
             }
 
-            let candidateTokens = Set(
-                candidate.split(separator: " ")
-                    .map(String.init)
-            )
+            let candidateTokens =
+                Set(
+                    candidate
+                        .split(separator: " ")
+                        .map(String.init)
+                )
 
-            let excludedTokens = Set(
-                excludedValue.split(separator: " ")
-                    .map(String.init)
-            )
+            let excludedTokens =
+                Set(
+                    excludedValue
+                        .split(separator: " ")
+                        .map(String.init)
+                )
 
-            // Example:
-            // "naruto" vs "naruto uzumaki"
-            //
-            // "demon slayer" vs
-            // "demon slayer kimetsu no yaiba"
-
-            if candidateTokens.isSubset(of: excludedTokens) ||
-               excludedTokens.isSubset(of: candidateTokens) {
-
+            if candidateTokens.isSubset(
+                of: excludedTokens
+            ) ||
+            excludedTokens.isSubset(
+                of: candidateTokens
+            ) {
                 return true
             }
         }
@@ -304,7 +216,7 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
         return false
     }
 
-    // MARK: - LLM Query
+    // MARK: - LLM
 
     private func fetchViaLLM(
         topic: String,
@@ -326,47 +238,47 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
             instructions: WordPairPromptBuilder.systemPrompt
         )
 
-        let topicValue = topic.isEmpty
-            ? DefaultTopic.value
-            : topic
-
-        let prompt = WordPairPromptBuilder.build(
-            topic: topicValue,
-            difficultyLabel: difficulty.rawValue,
-            excluding: excluding,
-            attempt: attempt
-        )
+        let prompt =
+            WordPairPromptBuilder.build(
+                topic: topic.isEmpty
+                    ? DefaultTopic.value
+                    : topic,
+                difficultyLabel: difficulty.rawValue,
+                excluding: excluding,
+                attempt: attempt
+            )
 
         print("""
-        📝 Prompt:
+        📝 [FoundationModels] Prompt:
         \(prompt)
         """)
 
-        let response = try await session.respond(
-            to: prompt
-        )
+        let response =
+            try await session.respond(
+                to: prompt
+            )
 
         print("""
-        🤖 Raw model response:
+        🤖 [FoundationModels] Raw response:
         \(response.content)
         """)
 
         return try Self.parseAndValidateJSON(
             response.content,
-            topic: topicValue,
+            topic: topic,
             difficulty: difficulty
         )
 
 #else
 
         throw WordGeneratorError.unavailable(
-            "Apple Intelligence is not available on this platform."
+            "FoundationModels is not available on this platform."
         )
 
 #endif
     }
 
-    // MARK: - JSON Parsing & Validation
+    // MARK: - JSON Parsing
 
     private nonisolated static func parseAndValidateJSON(
         _ text: String,
@@ -374,28 +286,30 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
         difficulty: PairDifficulty
     ) throws -> [WordPair] {
 
-        var rejectionReasons: [String: Int] = [:]
+        struct RawPair: Decodable {
 
-        var clean = text
-            .replacingOccurrences(
-                of: "```json",
-                with: ""
-            )
-            .replacingOccurrences(
-                of: "```JSON",
-                with: ""
-            )
-            .replacingOccurrences(
-                of: "```",
-                with: ""
-            )
-            .trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
+            let civilian: String
+            let undercover: String
+            let similarity: FlexibleDouble?
+        }
 
-        // ---------------------------------------------------------
-        // Extract JSON array
-        // ---------------------------------------------------------
+        var clean =
+            text
+                .replacingOccurrences(
+                    of: "```json",
+                    with: ""
+                )
+                .replacingOccurrences(
+                    of: "```JSON",
+                    with: ""
+                )
+                .replacingOccurrences(
+                    of: "```",
+                    with: ""
+                )
+                .trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
 
         if let start = clean.firstIndex(of: "["),
            let end = clean.lastIndex(of: "]"),
@@ -406,193 +320,102 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
             )
         }
 
-        guard let data = clean.data(
-            using: .utf8
-        ) else {
-
-            throw WordGeneratorError.parsingFailed(
-                clean
-            )
+        guard let data =
+                clean.data(using: .utf8)
+        else {
+            throw WordGeneratorError.parsingFailed(clean)
         }
 
-        // ---------------------------------------------------------
-        // Flexible similarity
-        //
-        // Small models sometimes return:
-        //
-        // "similarity": 0.75
-        //
-        // but sometimes:
-        //
-        // "similarity": "genre"
-        //
-        // We do NOT let one bad pair destroy the entire response.
-        // ---------------------------------------------------------
+        guard let rawPairs =
+                try? JSONDecoder().decode(
+                    [RawPair].self,
+                    from: data
+                )
+        else {
 
-        struct RawPair: Decodable {
-
-            let civilian: String
-            let undercover: String
-            let similarity: FlexibleDouble?
-        }
-
-        guard let rawPairs = try? JSONDecoder().decode(
-            [RawPair].self,
-            from: data
-        ) else {
-
-            print("""
-            ❌ Could not decode model response:
-            \(clean)
-            """)
-
-            throw WordGeneratorError.parsingFailed(
-                clean
+            print(
+                "❌ Could not decode LLM response:\n\(clean)"
             )
+
+            throw WordGeneratorError.parsingFailed(clean)
         }
 
         var seen = Set<String>()
         var pairs: [WordPair] = []
 
-        // ---------------------------------------------------------
-        // Validate candidates
-        // ---------------------------------------------------------
-
         for raw in rawPairs {
 
-            let civilianEN = normalize(
-                raw.civilian
-            )
+            let civilianEN =
+                normalize(raw.civilian)
 
-            let undercoverEN = normalize(
-                raw.undercover
-            )
-
-            // -----------------------------------------------------
-            // 1. Empty
-            // -----------------------------------------------------
+            let undercoverEN =
+                normalize(raw.undercover)
 
             guard !civilianEN.isEmpty,
                   !undercoverEN.isEmpty else {
-
-                rejectionReasons["empty", default: 0] += 1
                 continue
             }
-
-            // -----------------------------------------------------
-            // 2. Same concept
-            // -----------------------------------------------------
 
             guard civilianEN != undercoverEN else {
-
-                rejectionReasons["same_concept", default: 0] += 1
                 continue
             }
 
-            // -----------------------------------------------------
-            // 3. Token containment
-            // -----------------------------------------------------
+            let civilianTokens =
+                Set(
+                    civilianEN
+                        .split(separator: " ")
+                        .map(String.init)
+                )
 
-            let civilianTokens = Set(
-                civilianEN
-                    .split(separator: " ")
-                    .map(String.init)
-            )
+            let undercoverTokens =
+                Set(
+                    undercoverEN
+                        .split(separator: " ")
+                        .map(String.init)
+                )
 
-            let undercoverTokens = Set(
-                undercoverEN
-                    .split(separator: " ")
-                    .map(String.init)
-            )
-
-            if civilianTokens.isSubset(
+            guard !civilianTokens.isSubset(
                 of: undercoverTokens
-            ) ||
-            undercoverTokens.isSubset(
+            ),
+            !undercoverTokens.isSubset(
                 of: civilianTokens
-            ) {
-
-                rejectionReasons["token_containment", default: 0] += 1
+            ) else {
                 continue
             }
-
-            // -----------------------------------------------------
-            // 4. Duplicate inside response
-            // -----------------------------------------------------
 
             guard !seen.contains(civilianEN),
                   !seen.contains(undercoverEN) else {
-
-                rejectionReasons["duplicate", default: 0] += 1
                 continue
             }
 
-            // -----------------------------------------------------
-            // 5. Similarity
-            // -----------------------------------------------------
-
-            guard let similarity = raw.similarity?.value else {
-
-                rejectionReasons["invalid_similarity", default: 0] += 1
-
-                print("""
-                🚫 Rejected pair:
-                \(raw.civilian) / \(raw.undercover)
-                Reason: invalid similarity
-                """)
-
-                continue
-            }
-
-            guard similarity >= 0.0,
+            guard let similarity =
+                    raw.similarity?.value,
+                  similarity >= 0.0,
                   similarity <= 1.0 else {
-
-                rejectionReasons["invalid_similarity", default: 0] += 1
                 continue
             }
 
-            // -----------------------------------------------------
-            // 6. Difficulty validation
-            // -----------------------------------------------------
-
-            let validRange = difficulty.scoreRange
-
-            guard validRange.contains(similarity) else {
-
-                rejectionReasons["wrong_difficulty", default: 0] += 1
-
-                print("""
-                🚫 Rejected pair:
-                \(raw.civilian) / \(raw.undercover)
-                Similarity: \(similarity)
-                Expected: \(validRange)
-                """)
-
+            guard difficulty.scoreRange.contains(
+                similarity
+            ) else {
                 continue
             }
 
-            // -----------------------------------------------------
-            // 7. Build WordPair
-            // -----------------------------------------------------
-
-            let civilian = LocalizedWord(
-                values: buildTranslations(
-                    raw.civilian
+            let pair =
+                WordPair(
+                    civilian: LocalizedWord(
+                        values: buildTranslations(
+                            raw.civilian
+                        )
+                    ),
+                    undercover: LocalizedWord(
+                        values: buildTranslations(
+                            raw.undercover
+                        )
+                    ),
+                    topic: topic,
+                    similarity: similarity
                 )
-            )
-
-            let undercover = LocalizedWord(
-                values: buildTranslations(
-                    raw.undercover
-                )
-            )
-
-            let pair = WordPair(
-                civilian: civilian,
-                undercover: undercover,
-                topic: topic,
-                similarity: similarity
-            )
 
             pairs.append(pair)
 
@@ -600,51 +423,18 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
             seen.insert(undercoverEN)
         }
 
-        // ---------------------------------------------------------
-        // Logging
-        // ---------------------------------------------------------
-
-        print("""
-        🔎 Validation:
-        Generated: \(rawPairs.count)
-        Valid: \(pairs.count)
-        """)
-
-        if !rejectionReasons.isEmpty {
-
-            let reasons = rejectionReasons
-                .sorted {
-                    $0.value > $1.value
-                }
-
-            for (reason, count) in reasons {
-                print(
-                    "  - \(reason): \(count)"
-                )
-            }
-        }
-
         guard !pairs.isEmpty else {
-
-            print("""
-            ❌ No valid pairs generated
-            Topic: \(topic)
-            Difficulty: \(difficulty.rawValue)
-            """)
-
             throw WordGeneratorError.noPairsAvailable
         }
 
-        print("""
-        ✅ Generated \(pairs.count) valid pairs
-        Topic: \(topic)
-        Difficulty: \(difficulty.rawValue)
-        """)
+        print(
+            "✅ [FoundationModels] Valid pairs: \(pairs.count)"
+        )
 
         return pairs
     }
 
-    // MARK: - Flexible Similarity
+    // MARK: - Flexible Double
 
     private struct FlexibleDouble: Decodable {
 
@@ -652,25 +442,23 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
 
         init(from decoder: Decoder) throws {
 
-            let container = try decoder.singleValueContainer()
+            let container =
+                try decoder.singleValueContainer()
 
-            if let number = try? container.decode(Double.self) {
+            if let number =
+                try? container.decode(Double.self) {
+
                 value = number
                 return
             }
 
-            if let string = try? container.decode(String.self),
+            if let string =
+                try? container.decode(String.self),
                let number = Double(string) {
 
                 value = number
                 return
             }
-
-            // Example:
-            // "similarity": "genre"
-            //
-            // We don't fail the whole JSON.
-            // This individual pair will simply be rejected.
 
             value = nil
         }
@@ -686,19 +474,19 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
             return ""
         }
 
-        let normalized = value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
             .lowercased()
             .folding(
                 options: .diacriticInsensitive,
                 locale: .current
             )
-
-        return normalized
-            .split { character in
-                character.isWhitespace ||
-                character.isPunctuation ||
-                character.isSymbol
+            .split {
+                $0.isWhitespace ||
+                $0.isPunctuation ||
+                $0.isSymbol
             }
             .joined(separator: " ")
     }

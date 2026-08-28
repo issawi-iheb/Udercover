@@ -23,66 +23,65 @@ public actor WordGeneratorService {
         self.generators = generators
     }
 
-    /// Get a word pair by trying each generator in sequence.
-    ///
-    /// - Parameters:
-    ///   - topic: Topic/category for the pair
-    ///   - language: Requested language
-    ///   - difficulty: Requested difficulty (easy/medium/hard)
-    ///   - excluding: Set of already-used concepts (normalized)
-    ///
-    /// - Returns: First successful WordPair
-    /// - Throws: Last error if all generators fail
-    public func randomPair(
+    // MARK: - Local
+
+    public func generateLocalPair(
         topic: String,
         language: AppLanguage,
         difficulty: PairDifficulty,
         excluding: Set<String>
     ) async throws -> WordPair {
 
-        var lastError: Error = WordGeneratorError.noPairsAvailable
-
-        for generator in generators {
-            guard await generator.isAvailable else {
-                print("⏭️ [\(await generator.generatorName)] Not available, skipping")
-                continue
+        guard let local = generators.first(
+            where: {
+                $0 is LocalWordGenerator
             }
-
-            do {
-                let pair = try await generator.randomPair(
-                    topic: topic,
-                    language: language,
-                    difficulty: difficulty,
-                    excluding: excluding
-                )
-
-                print("""
-                ✅ [\(await generator.generatorName)] Success
-                """)
-
-                return pair
-
-            } catch {
-                if error is CancellationError {
-                    throw error
-                }
-                print("""
-                ⚠️ [\(await generator.generatorName)] Failed: \(error.localizedDescription)
-                """)
-                lastError = error
-            }
+        ) else {
+            throw WordGeneratorError.noPairsAvailable
         }
 
-        throw lastError
+        guard await local.isAvailable else {
+            throw WordGeneratorError.unavailable(
+                "Local word generator is not available."
+            )
+        }
+
+        return try await local.randomPair(
+            topic: topic,
+            language: language,
+            difficulty: difficulty,
+            excluding: excluding
+        )
     }
 
-    /// Get the name of the first available generator (for UI/debug).
-    public func activeGeneratorName() async -> String {
-        for generator in generators {
-            if await generator.isAvailable {
-                return await generator.generatorName
+    // MARK: - LLM
+
+    public func generateBackgroundPair(
+        topic: String,
+        language: AppLanguage,
+        difficulty: PairDifficulty,
+        excluding: Set<String>
+    ) async throws -> WordPair {
+
+        guard let llm = generators.first(
+            where: {
+                $0 is FoundationModelsWordGenerator
             }
+        ) else {
+            throw WordGeneratorError.noPairsAvailable
         }
-        return "None"
+
+        guard await llm.isAvailable else {
+            throw WordGeneratorError.unavailable(
+                "Foundation Models is not available."
+            )
+        }
+
+        return try await llm.randomPair(
+            topic: topic,
+            language: language,
+            difficulty: difficulty,
+            excluding: excluding
+        )
     }
 }

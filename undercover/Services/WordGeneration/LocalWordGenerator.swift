@@ -2,28 +2,30 @@
 //  LocalWordGenerator.swift
 //  undercoverApp
 //
-//  Fully offline generator. Actor for Swift 6 safety.
-//  Uses NormalizationUtility for concept identity.
-//  Strategy: WordRepository first → adjacent difficulty bands → fallback.
+//  Fully offline generator.
 //
 
 import Foundation
 
 public actor LocalWordGenerator: WordGeneratorProtocol {
 
-    public let generatorName = "Local (Offline)"
-    public var isAvailable: Bool { true }
+    public let generatorName =
+        "Local (Offline)"
 
-    private let repository = WordRepository()
+    public var isAvailable: Bool {
+        true
+    }
+
+    private let repository =
+        WordRepository()
 
     // MARK: - Game Lifecycle
 
-    /// Call when a new game starts to reset session state.
     public func resetGame() {
         print("🔄 [Local] Reset for new game.")
     }
 
-    // MARK: - Protocol
+    // MARK: - Generator
 
     public func randomPair(
         topic: String,
@@ -39,18 +41,21 @@ public actor LocalWordGenerator: WordGeneratorProtocol {
         Exclusions: \(excluding.count)
         """)
 
-        if let pair = repository.randomPair(
-            topic: topic,
-            language: language,
-            difficulty: difficulty,
-            excluding: excluding
-        ) {
+        if let pair =
+            repository.randomPair(
+                topic: topic,
+                language: language,
+                difficulty: difficulty,
+                excluding: excluding
+            ) {
+
             print("✅ [Local] Found pair")
+
             return pair
         }
 
         print("""
-        ⚠️ [Local] No unused \(difficulty.rawValue) pairs available.
+        ⚠️ [Local] No unused \(difficulty.rawValue) pairs.
         → Falling back to next generator.
         """)
 

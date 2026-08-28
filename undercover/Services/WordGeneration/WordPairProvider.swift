@@ -1,8 +1,19 @@
 //
 //  WordPairProvider.swift
-//  undercover
+//  undercoverApp
 //
-//  Created by Iheb on 21/08/2026.
+//  Game-level word-pair cache.
+//
+//  Flow:
+//
+//  GAME START
+//      Local → 1 playable pair
+//      LLM   → background refill to 4
+//
+//  GAMEPLAY
+//      Cache first
+//      Cache <= 2 → LLM background refill
+//      Cache empty → wait for LLM
 //
 
 import Foundation
@@ -18,571 +29,521 @@ final class WordPairProvider {
         let difficulty: PairDifficulty
     }
 
+    private let refillThreshold = 2
+    private let targetPreparedPairs = 4
+    private let maxPreparationAttempts = 20
+
     // MARK: - Cache
 
     private var preparedWordPairs: [WordPair] = []
+    private var preparedConfiguration: WordBatchConfiguration?
 
-    private var preparedConfiguration:
-        WordBatchConfiguration?
-
-    private var preparationTask:
-        Task<Void, Never>?
+    private var initialLocalTask: Task<Void, Never>?
+    private var llmPreparationTask: Task<Void, Never>?
 
     private var preparationID = UUID()
-
-    private let refillThreshold = 2
-
-    private let targetPreparedPairs = 4
-
-    // Prevent endless generation if a generator repeatedly
-    // returns invalid/duplicate pairs.
-    private let maximumGenerationAttempts = 8
 
     // MARK: - Services
 
     private let pairStore = PlayedPairStore()
-
     private let nextPairMutex = AsyncMutex()
 
-    private lazy var generatorService =
-        WordGeneratorService(
-            generators: [
-                LocalWordGenerator(),
-                FoundationModelsWordGenerator()
-            ]
-        )
+    private lazy var generatorService = WordGeneratorService(
+        generators: [
+            LocalWordGenerator(),
+            FoundationModelsWordGenerator()
+        ]
+    )
 
-    // MARK: - Snapshot
+    // MARK: - Game Start
 
-    private enum NextPairSnapshot {
-
-        case cached(WordPair)
-
-        case generate(
-            exclusions: Set<String>
-        )
-    }
-
-    // MARK: - Errors
-
-    private enum WordPairProviderError: Error {
-
-        case configurationChanged
-
-        case pairBecameInvalid
-
-        case generationFailed
-    }
-
-    // MARK: - Preparation
-
-    /// Starts background preparation if necessary.
+    /// Starts Local generation for the first playable pair.
     ///
-    /// This method NEVER waits for generation.
+    /// The Local task is awaited by `nextPair()`.
+    /// LLM preparation starts after Local succeeds and runs in background.
+    func prepareForGameStart(
+        playerCount: Int,
+        topic: String,
+        language: AppLanguage,
+        difficulty: PairDifficulty
+    ) {
+        guard playerCount >= 3 else {
+            return
+        }
+
+        let configuration = WordBatchConfiguration(
+            topic: topic,
+            language: language,
+            difficulty: difficulty
+        )
+
+        if preparedConfiguration != configuration {
+            resetPreparation(for: configuration)
+        }
+
+        // We already have something playable.
+        if !preparedWordPairs.isEmpty {
+            startLLMPreparationIfNeeded(
+                configuration: configuration,
+                preparationID: preparationID
+            )
+            return
+        }
+
+        // Local generation is already running.
+        guard initialLocalTask == nil else {
+            return
+        }
+
+        let currentPreparationID = preparationID
+
+        initialLocalTask = Task { @MainActor [weak self] in
+            guard let self else {
+                return
+            }
+
+            defer {
+                if self.preparationID == currentPreparationID {
+                    self.initialLocalTask = nil
+                }
+            }
+
+            do {
+                let used = await self.pairStore.usedConcepts(
+                    for: configuration.topic
+                )
+
+                let cached = await self.cacheConcepts()
+
+                let exclusions = used.union(cached)
+
+                let pair = try await self.generatorService.generateLocalPair(
+                    topic: configuration.topic,
+                    language: configuration.language,
+                    difficulty: configuration.difficulty,
+                    excluding: exclusions
+                )
+
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                let inserted = await self.insertPreparedPair(
+                    pair,
+                    configuration: configuration
+                )
+
+                guard inserted else {
+                    return
+                }
+
+                print("✅ [Provider] Initial Local pair loaded.")
+                print(
+                    "📦 [Provider] Cache: " +
+                    "\(self.preparedWordPairs.count)/" +
+                    "\(self.targetPreparedPairs)"
+                )
+
+                // Start LLM only after Local produced a playable pair.
+                self.startLLMPreparationIfNeeded(
+                    configuration: configuration,
+                    preparationID: currentPreparationID
+                )
+
+            } catch is CancellationError {
+                print("🛑 [Provider] Initial Local preparation cancelled.")
+
+            } catch {
+                print(
+                    "⚠️ [Provider] Initial Local generation failed: \(error)"
+                )
+
+                // Local failed → allow LLM to provide the first pair.
+                self.startLLMPreparationIfNeeded(
+                    configuration: configuration,
+                    preparationID: currentPreparationID
+                )
+            }
+        }
+    }
+
+    // MARK: - LLM Preparation
+
+    /// Starts LLM background generation.
+    ///
+    /// This method NEVER waits for the generated pair.
+    private func startLLMPreparationIfNeeded(
+        configuration: WordBatchConfiguration,
+        preparationID: UUID
+    ) {
+        guard preparedConfiguration == configuration else {
+            return
+        }
+
+        guard preparedWordPairs.count < targetPreparedPairs else {
+            return
+        }
+
+        guard llmPreparationTask == nil else {
+            return
+        }
+
+        llmPreparationTask = Task { @MainActor [weak self] in
+            guard let self else {
+                return
+            }
+
+            defer {
+                if self.preparationID == preparationID {
+                    self.llmPreparationTask = nil
+                }
+            }
+
+            var attempts = 0
+
+            while !Task.isCancelled,
+                  attempts < self.maxPreparationAttempts {
+
+                guard self.preparedConfiguration == configuration,
+                      self.preparedWordPairs.count < self.targetPreparedPairs
+                else {
+                    break
+                }
+
+                attempts += 1
+
+                let used = await self.pairStore.usedConcepts(
+                    for: configuration.topic
+                )
+
+                let cached = await self.cacheConcepts()
+
+                let exclusions = used.union(cached)
+
+                do {
+                    print(
+                        """
+                        🧠 [Provider] LLM refill
+                        Cache: \(self.preparedWordPairs.count)/\(self.targetPreparedPairs)
+                        Exclusions: \(exclusions.count)
+                        """
+                    )
+
+                    let pair = try await self.generatorService
+                        .generateBackgroundPair(
+                            topic: configuration.topic,
+                            language: configuration.language,
+                            difficulty: configuration.difficulty,
+                            excluding: exclusions
+                        )
+
+                    guard !Task.isCancelled else {
+                        break
+                    }
+
+                    let inserted = await self.insertPreparedPair(
+                        pair,
+                        configuration: configuration
+                    )
+
+                    if inserted {
+                        print("✅ [Provider] LLM pair added.")
+                        print(
+                            "📦 [Provider] Cache: " +
+                            "\(self.preparedWordPairs.count)/" +
+                            "\(self.targetPreparedPairs)"
+                        )
+                    } else {
+                        print("⚠️ [Provider] LLM pair rejected.")
+                    }
+
+                } catch is CancellationError {
+                    break
+
+                } catch {
+                    print(
+                        "⚠️ [Provider] LLM preparation failed: \(error)"
+                    )
+
+                    // Don't continuously hammer Foundation Models.
+                    break
+                }
+            }
+        }
+    }
+
+    // MARK: - Insert
+
+    @discardableResult
+    private func insertPreparedPair(
+        _ pair: WordPair,
+        configuration: WordBatchConfiguration
+    ) async -> Bool {
+        guard preparedConfiguration == configuration else {
+            return false
+        }
+
+        let pairConcepts = NormalizationUtility.conceptsFromPair(
+            civilian: pair.civilian.firstNonEmpty,
+            undercover: pair.undercover.firstNonEmpty
+        )
+
+        let used = await pairStore.usedConcepts(
+            for: configuration.topic
+        )
+
+        return await nextPairMutex.withLock {
+            guard preparedConfiguration == configuration else {
+                return false
+            }
+
+            guard preparedWordPairs.count < targetPreparedPairs else {
+                return false
+            }
+
+            let cached = currentCacheConcepts()
+
+            guard pairConcepts.isDisjoint(with: used) else {
+                print("⚠️ [Provider] Rejected pair: already played.")
+                return false
+            }
+
+            guard pairConcepts.isDisjoint(with: cached) else {
+                print("⚠️ [Provider] Rejected pair: conflicts with cache.")
+                return false
+            }
+
+            preparedWordPairs.append(pair)
+            return true
+        }
+    }
+
+    // MARK: - Setup Preparation
+
+    /// Called when setup changes.
+    ///
+    /// This only starts LLM background preparation.
+    /// The initial Local pair is handled by `prepareForGameStart()`.
     func prepareIfNeeded(
         playerCount: Int,
         topic: String?,
         language: AppLanguage,
         difficulty: PairDifficulty
     ) {
-
         guard playerCount >= 3,
               let topic,
               !topic.isEmpty
         else {
-
-            self.preparationTask?.cancel()
-            self.preparationTask = nil
-
-            self.preparedWordPairs.removeAll()
-            self.preparedConfiguration = nil
-
+            reset()
             return
         }
 
-        let configuration =
-            WordBatchConfiguration(
-                topic: topic,
-                language: language,
-                difficulty: difficulty
-            )
-
-        // ---------------------------------------------------------
-        // Configuration changed.
-        // ---------------------------------------------------------
-
-        if self.preparedConfiguration != configuration {
-
-            self.preparationTask?.cancel()
-            self.preparationTask = nil
-
-            self.preparedWordPairs.removeAll()
-
-            self.preparedConfiguration =
-                configuration
-
-            self.preparationID = UUID()
-        }
-
-        // ---------------------------------------------------------
-        // Cache already full.
-        // ---------------------------------------------------------
-
-        guard self.preparedWordPairs.count
-                < self.targetPreparedPairs
-        else {
-            return
-        }
-
-        // ---------------------------------------------------------
-        // Already preparing.
-        // ---------------------------------------------------------
-
-        guard self.preparationTask == nil
-        else {
-            return
-        }
-
-        let currentPreparationID =
-            self.preparationID
-
-        self.preparationTask =
-            Task { [weak self] in
-
-                guard let self else {
-                    return
-                }
-
-                await self.prepare(
-                    configuration: configuration,
-                    preparationID: currentPreparationID
-                )
-            }
-    }
-
-    // MARK: - Prepare
-
-    private func prepare(
-        configuration: WordBatchConfiguration,
-        preparationID: UUID
-    ) async {
-
-        var excluded =
-            await self.pairStore.usedConcepts(
-                for: configuration.topic
-            )
-
-        // Include concepts currently in cache.
-        let cachedConcepts =
-            self.conceptsInPreparedCache()
-
-        excluded.formUnion(
-            cachedConcepts
+        let configuration = WordBatchConfiguration(
+            topic: topic,
+            language: language,
+            difficulty: difficulty
         )
 
-        while !Task.isCancelled {
-
-            // Configuration changed.
-            guard self.preparedConfiguration ==
-                    configuration
-            else {
-                break
-            }
-
-            // Target reached.
-            guard self.preparedWordPairs.count
-                    < self.targetPreparedPairs
-            else {
-                break
-            }
-
-            do {
-
-                let pair =
-                    try await self.generatorService.randomPair(
-                        topic: configuration.topic,
-                        language: configuration.language,
-                        difficulty: configuration.difficulty,
-                        excluding: excluded
-                    )
-
-                guard !Task.isCancelled
-                else {
-                    break
-                }
-
-                let pairConcepts =
-                    pair.concepts
-
-                // -------------------------------------------------
-                // Validate + insert atomically.
-                // -------------------------------------------------
-
-                let inserted =
-                    await self.nextPairMutex.withLock {
-
-                        guard self.preparedConfiguration ==
-                                configuration
-                        else {
-                            return false
-                        }
-
-                        guard self.preparedWordPairs.count
-                                < self.targetPreparedPairs
-                        else {
-                            return false
-                        }
-
-                        let usedNow =
-                            await self.pairStore.usedConcepts(
-                                for: configuration.topic
-                            )
-
-                        let cacheConceptsNow =
-                            self.conceptsInPreparedCache()
-
-                        guard pairConcepts.isDisjoint(
-                            with: usedNow
-                        )
-                        else {
-                            return false
-                        }
-
-                        guard pairConcepts.isDisjoint(
-                            with: cacheConceptsNow
-                        )
-                        else {
-                            return false
-                        }
-
-                        self.preparedWordPairs.append(
-                            pair
-                        )
-
-                        return true
-                    }
-
-                if inserted {
-                    excluded.formUnion(
-                        pairConcepts
-                    )
-                }
-
-            } catch is CancellationError {
-
-                break
-
-            } catch {
-
-                // Don't kill preparation permanently.
-                //
-                // Give the generator a moment before retrying.
-                try? await Task.sleep(
-                    for: .milliseconds(200)
-                )
-            }
+        if preparedConfiguration != configuration {
+            resetPreparation(for: configuration)
         }
 
-        // Only clear the currently active task.
-        guard self.preparationID ==
-                preparationID
-        else {
-            return
-        }
-
-        self.preparationTask = nil
+        startLLMPreparationIfNeeded(
+            configuration: configuration,
+            preparationID: preparationID
+        )
     }
 
     // MARK: - Next Pair
 
-    /// Returns the next available word pair.
+    /// Returns a playable pair.
     ///
-    /// Background preparation is NEVER awaited.
+    /// Flow:
     ///
-    /// Cached pairs are consumed immediately.
-    /// If no cached pair is available, generation happens outside
-    /// the mutex.
+    /// 1. Start Local preparation if necessary.
+    /// 2. Wait for Local only.
+    /// 3. Consume cached pair.
+    /// 4. If cache <= threshold, start LLM refill.
+    /// 5. If cache is empty, wait for LLM.
     func nextPair(
         playerCount: Int,
         topic: String,
         language: AppLanguage,
         difficulty: PairDifficulty
     ) async throws -> WordPair {
-
-        var attempts = 0
-
-        while attempts < self.maximumGenerationAttempts {
-
-            attempts += 1
-
-            // -----------------------------------------------------
-            // PHASE 1
-            //
-            // Inspect cache under mutex.
-            // -----------------------------------------------------
-
-            let snapshot =
-                await self.nextPairMutex.withLock {
-
-                    let used =
-                        await self.pairStore.usedConcepts(
-                            for: topic
-                        )
-
-                    // -------------------------------------------------
-                    // Try cache first.
-                    // -------------------------------------------------
-
-                    if let configuration =
-                        self.preparedConfiguration,
-                       configuration.topic == topic,
-                       configuration.language == language,
-                       configuration.difficulty == difficulty {
-
-                        if let index =
-                            self.preparedWordPairs.firstIndex(
-                                where: { pair in
-
-                                    pair.concepts.isDisjoint(
-                                        with: used
-                                    )
-                                }
-                            ) {
-
-                            let pair =
-                                self.preparedWordPairs.remove(
-                                    at: index
-                                )
-
-                            return NextPairSnapshot.cached(
-                                pair
-                            )
-                        }
-                    }
-
-                    // -------------------------------------------------
-                    // No compatible cached pair.
-                    //
-                    // Snapshot exclusions.
-                    // -------------------------------------------------
-
-                    let cacheConcepts =
-                        self.conceptsInPreparedCache()
-
-                    let exclusions =
-                        used.union(cacheConcepts)
-
-                    return NextPairSnapshot.generate(
-                        exclusions: exclusions
-                    )
-                }
-
-            // -----------------------------------------------------
-            // PHASE 2
-            //
-            // Generate OUTSIDE mutex.
-            // -----------------------------------------------------
-
-            let candidate: WordPair
-
-            switch snapshot {
-
-            case .cached(let cachedPair):
-
-                candidate = cachedPair
-
-            case .generate(let exclusions):
-
-                do {
-
-                    candidate =
-                        try await self.generatorService.randomPair(
-                            topic: topic,
-                            language: language,
-                            difficulty: difficulty,
-                            excluding: exclusions
-                        )
-
-                } catch is CancellationError {
-
-                    throw CancellationError()
-
-                } catch {
-
-                    throw error
-                }
-            }
-
-            // -----------------------------------------------------
-            // PHASE 3
-            //
-            // Validate + commit.
-            // -----------------------------------------------------
-
-            do {
-
-                return try await self.nextPairMutex.withLock {
-
-                    // -------------------------------------------------
-                    // Configuration must still match.
-                    // -------------------------------------------------
-
-                    guard let configuration =
-                        self.preparedConfiguration,
-                          configuration.topic == topic,
-                          configuration.language == language,
-                          configuration.difficulty == difficulty
-                    else {
-
-                        // Restore cached pair.
-                        if case .cached(let cachedPair) =
-                            snapshot {
-
-                            self.preparedWordPairs.append(
-                                cachedPair
-                            )
-                        }
-
-                        throw WordPairProviderError
-                            .configurationChanged
-                    }
-
-                    // -------------------------------------------------
-                    // Reload latest played concepts.
-                    // -------------------------------------------------
-
-                    let usedNow =
-                        await self.pairStore.usedConcepts(
-                            for: topic
-                        )
-
-                    // -------------------------------------------------
-                    // Validate candidate against current state.
-                    // -------------------------------------------------
-
-                    let candidateConcepts =
-                        candidate.concepts
-
-                    guard candidateConcepts.isDisjoint(
-                        with: usedNow
-                    )
-                    else {
-
-                        if case .cached(let cachedPair) =
-                            snapshot {
-
-                            self.preparedWordPairs.append(
-                                cachedPair
-                            )
-                        }
-
-                        throw WordPairProviderError
-                            .pairBecameInvalid
-                    }
-
-                    // -------------------------------------------------
-                    // A generated candidate must also not collide
-                    // with anything currently in the cache.
-                    //
-                    // Cached candidate was already removed, so it
-                    // does not need to be compared with itself.
-                    // -------------------------------------------------
-
-                    if case .generate = snapshot {
-
-                        let cacheConcepts =
-                            self.conceptsInPreparedCache()
-
-                        guard candidateConcepts.isDisjoint(
-                            with: cacheConcepts
-                        )
-                        else {
-
-                            throw WordPairProviderError
-                                .pairBecameInvalid
-                        }
-                    }
-
-                    // -------------------------------------------------
-                    // Mark played while protected by the mutex.
-                    // -------------------------------------------------
-
-                    do {
-
-                        try await self.pairStore.markAsPlayed(
-                            civilian:
-                                candidate.civilian.firstNonEmpty,
-                            undercover:
-                                candidate.undercover.firstNonEmpty,
-                            topic: topic
-                        )
-
-                    } catch {
-
-                        // Cached pair was never successfully
-                        // committed, therefore restore it.
-                        if case .cached(let cachedPair) =
-                            snapshot {
-
-                            self.preparedWordPairs.append(
-                                cachedPair
-                            )
-                        }
-
-                        throw error
-                    }
-
-                    // -------------------------------------------------
-                    // Trigger refill.
-                    // -------------------------------------------------
-
-                    if self.preparedWordPairs.count
-                        <= self.refillThreshold {
-
-                        self.prepareIfNeeded(
-                            playerCount: playerCount,
-                            topic: topic,
-                            language: language,
-                            difficulty: difficulty
-                        )
-                    }
-
-                    return candidate
-                }
-
-            } catch WordPairProviderError.pairBecameInvalid {
-
-                // -----------------------------------------------------
-                // Another request won the race.
-                //
-                // Don't fail the game.
-                //
-                // Simply retry generation with fresh exclusions.
-                // -----------------------------------------------------
-
-                continue
-
-            } catch WordPairProviderError.configurationChanged {
-
-                throw WordPairProviderError
-                    .configurationChanged
-            }
+        prepareForGameStart(
+            playerCount: playerCount,
+            topic: topic,
+            language: language,
+            difficulty: difficulty
+        )
+
+        // Initial game start waits for Local.
+        if let localTask = initialLocalTask {
+            await localTask.value
         }
 
-        throw WordPairProviderError
-            .generationFailed
+        // ---------------------------------------------------------
+        // CACHE FIRST
+        // ---------------------------------------------------------
+
+        if let pair = await consumeCachedPair(
+            topic: topic,
+            language: language,
+            difficulty: difficulty
+        ) {
+            await handleCacheAfterConsumption(
+                playerCount: playerCount,
+                topic: topic,
+                language: language,
+                difficulty: difficulty
+            )
+
+            return pair
+        }
+
+        // ---------------------------------------------------------
+        // CACHE EMPTY
+        //
+        // Only NOW do we wait for LLM.
+        // ---------------------------------------------------------
+
+        prepareIfNeeded(
+            playerCount: playerCount,
+            topic: topic,
+            language: language,
+            difficulty: difficulty
+        )
+
+        if let llmTask = llmPreparationTask {
+            await llmTask.value
+        }
+
+        // LLM may have populated the cache.
+        if let pair = await consumeCachedPair(
+            topic: topic,
+            language: language,
+            difficulty: difficulty
+        ) {
+            await handleCacheAfterConsumption(
+                playerCount: playerCount,
+                topic: topic,
+                language: language,
+                difficulty: difficulty
+            )
+
+            return pair
+        }
+
+        throw WordPairProviderError.unableToProvidePair
     }
 
-    // MARK: - Helpers
+    // MARK: - Cache Consumption
 
-    private func conceptsInPreparedCache()
-        -> Set<String> {
+    private func consumeCachedPair(
+        topic: String,
+        language: AppLanguage,
+        difficulty: PairDifficulty
+    ) async -> WordPair? {
+        let used = await pairStore.usedConcepts(
+            for: topic
+        )
 
+        let pair: WordPair? = await nextPairMutex.withLock {
+            guard let configuration = preparedConfiguration,
+                  configuration.topic == topic,
+                  configuration.language == language,
+                  configuration.difficulty == difficulty
+            else {
+                return nil
+            }
+
+            guard let index = preparedWordPairs.firstIndex(
+                where: { pair in
+                    let concepts = NormalizationUtility.conceptsFromPair(
+                        civilian: pair.civilian.firstNonEmpty,
+                        undercover: pair.undercover.firstNonEmpty
+                    )
+
+                    return concepts.isDisjoint(with: used)
+                }
+            ) else {
+                return nil
+            }
+
+            return preparedWordPairs.remove(at: index)
+        }
+
+        guard let pair else {
+            return nil
+        }
+
+        do {
+            try await pairStore.markAsPlayed(
+                civilian: pair.civilian.firstNonEmpty,
+                undercover: pair.undercover.firstNonEmpty,
+                topic: topic
+            )
+
+            return pair
+
+        } catch {
+            await nextPairMutex.withLock {
+                preparedWordPairs.insert(pair, at: 0)
+            }
+
+            return nil
+        }
+    }
+
+    // MARK: - Cache Refill
+
+    private func handleCacheAfterConsumption(
+        playerCount: Int,
+        topic: String,
+        language: AppLanguage,
+        difficulty: PairDifficulty
+    ) {
+        let cacheCount = preparedWordPairs.count
+
+        print(
+            "🎮 [Provider] Pair consumed."
+        )
+
+        print(
+            "📦 [Provider] Cache: " +
+            "\(cacheCount)/\(targetPreparedPairs)"
+        )
+
+        guard cacheCount <= refillThreshold else {
+            return
+        }
+
+        prepareIfNeeded(
+            playerCount: playerCount,
+            topic: topic,
+            language: language,
+            difficulty: difficulty
+        )
+    }
+
+    // MARK: - Cache Helpers
+
+    private func cacheConcepts() async -> Set<String> {
+        await nextPairMutex.withLock {
+            currentCacheConcepts()
+        }
+    }
+
+    private func currentCacheConcepts() -> Set<String> {
         var concepts = Set<String>()
 
-        for pair in self.preparedWordPairs {
+        for pair in preparedWordPairs {
             concepts.formUnion(
-                pair.concepts
+                NormalizationUtility.conceptsFromPair(
+                    civilian: pair.civilian.firstNonEmpty,
+                    undercover: pair.undercover.firstNonEmpty
+                )
             )
         }
 
@@ -591,14 +552,37 @@ final class WordPairProvider {
 
     // MARK: - Reset
 
-    func reset() {
+    private func resetPreparation(
+        for configuration: WordBatchConfiguration
+    ) {
+        initialLocalTask?.cancel()
+        initialLocalTask = nil
 
-        self.preparationTask?.cancel()
-        self.preparationTask = nil
+        llmPreparationTask?.cancel()
+        llmPreparationTask = nil
 
-        self.preparationID = UUID()
+        preparedWordPairs.removeAll()
+        preparedConfiguration = configuration
 
-        self.preparedWordPairs.removeAll()
-        self.preparedConfiguration = nil
+        preparationID = UUID()
     }
+
+    func reset() {
+        initialLocalTask?.cancel()
+        initialLocalTask = nil
+
+        llmPreparationTask?.cancel()
+        llmPreparationTask = nil
+
+        preparedWordPairs.removeAll()
+        preparedConfiguration = nil
+
+        preparationID = UUID()
+    }
+}
+
+// MARK: - Errors
+
+private enum WordPairProviderError: Error {
+    case unableToProvidePair
 }
