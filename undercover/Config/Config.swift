@@ -8,10 +8,6 @@
 //
 
 enum Config {
-    // Replace with your real key. Generator auto-disables if placeholder is left.
-    static let anthropicAPIKey = "sk-ant-REPLACE_ME"
-    static let openAIAPIKey    = "sk-proj-REPLACE_ME"
-
     // Duration of the discussion timer in seconds.
     static let discussionTimerSeconds = 120
 }
