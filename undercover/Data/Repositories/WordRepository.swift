@@ -66,10 +66,10 @@ public final class WordRepository: Sendable {
 
             // 3. Neither concept can be in exclusion set (CRITICAL)
             let civilian = NormalizationUtility.normalize(
-                pair.civilian.values["en"]
+                pair.civilian.localized(for: language)
             )
             let undercover = NormalizationUtility.normalize(
-                pair.undercover.values["en"]
+                pair.undercover.localized(for: language)
             )
 
             guard !normalizedExcluding.contains(civilian),

@@ -53,7 +53,7 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
             )
 
         let normalizedExclusions = Set(
-            excluding.map(Self.normalize)
+            excluding.map(NormalizationUtility.normalize)
         )
 
         print("""
@@ -91,14 +91,15 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
 
                 if let pair = firstAvailablePair(
                     from: candidates,
+                    language: language,
                     excluding: normalizedExclusions
                 ) {
 
                     print("""
                     ✅ [FoundationModels] Selected:
-                    \(pair.civilian.values["en"] ?? "?")
+                    \(pair.civilian.localized(for: language))
                     /
-                    \(pair.undercover.values["en"] ?? "?")
+                    \(pair.undercover.localized(for: language))
                     """)
 
                     return pair
@@ -132,20 +133,19 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
 
     private nonisolated func firstAvailablePair(
         from pairs: [WordPair],
+        language: AppLanguage,
         excluding excluded: Set<String>
     ) -> WordPair? {
 
         for pair in pairs {
 
-            let civilian =
-                Self.normalize(
-                    pair.civilian.values["en"]
-                )
+            let civilian = NormalizationUtility.normalize(
+                pair.civilian.localized(for: language)
+            )
 
-            let undercover =
-                Self.normalize(
-                    pair.undercover.values["en"]
-                )
+            let undercover = NormalizationUtility.normalize(
+                pair.undercover.localized(for: language)
+            )
 
             guard !civilian.isEmpty,
                   !undercover.isEmpty else {
@@ -242,7 +242,7 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
             WordPairPromptBuilder.build(
                 topic: topic.isEmpty
                     ? DefaultTopic.value
-                    : topic,
+                : topic, language: language,
                 difficultyLabel: difficulty.rawValue,
                 excluding: excluding,
                 attempt: attempt
@@ -266,6 +266,7 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
         return try Self.parseAndValidateJSON(
             response.content,
             topic: topic,
+            language: language,
             difficulty: difficulty
         )
 
@@ -283,6 +284,7 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
     private nonisolated static func parseAndValidateJSON(
         _ text: String,
         topic: String,
+        language: AppLanguage,
         difficulty: PairDifficulty
     ) throws -> [WordPair] {
 
@@ -346,10 +348,10 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
         for raw in rawPairs {
 
             let civilianEN =
-                normalize(raw.civilian)
+            NormalizationUtility.normalize(raw.civilian)
 
             let undercoverEN =
-                normalize(raw.undercover)
+            NormalizationUtility.normalize(raw.undercover)
 
             guard !civilianEN.isEmpty,
                   !undercoverEN.isEmpty else {
@@ -404,14 +406,14 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
             let pair =
                 WordPair(
                     civilian: LocalizedWord(
-                        values: buildTranslations(
-                            raw.civilian
-                        )
+                        values: [
+                            language.rawValue: raw.civilian
+                        ]
                     ),
                     undercover: LocalizedWord(
-                        values: buildTranslations(
-                            raw.undercover
-                        )
+                        values: [
+                            language.rawValue: raw.undercover
+                        ]
                     ),
                     topic: topic,
                     similarity: similarity
@@ -462,47 +464,5 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
 
             value = nil
         }
-    }
-
-    // MARK: - Normalization
-
-    private nonisolated static func normalize(
-        _ value: String?
-    ) -> String {
-
-        guard let value else {
-            return ""
-        }
-
-        return value
-            .trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
-            .lowercased()
-            .folding(
-                options: .diacriticInsensitive,
-                locale: .current
-            )
-            .split {
-                $0.isWhitespace ||
-                $0.isPunctuation ||
-                $0.isSymbol
-            }
-            .joined(separator: " ")
-    }
-
-    // MARK: - Translations
-
-    private nonisolated static func buildTranslations(
-        _ value: String
-    ) -> [String: String] {
-
-        [
-            "en": value,
-            "fr": value,
-            "es": value,
-            "ar": value,
-            "tn": value
-        ]
     }
 }

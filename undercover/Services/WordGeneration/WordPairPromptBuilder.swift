@@ -50,6 +50,7 @@ public enum WordPairPromptBuilder {
     /// Build a prompt with topic, difficulty, exclusions, and retry strategy.
     public static func build(
         topic: String,
+        language: AppLanguage,
         difficultyLabel: String,
         excluding: Set<String>,
         attempt: Int
@@ -58,10 +59,32 @@ public enum WordPairPromptBuilder {
         let usedList = formatExcludingList(excluding)
         let strategy = retryStrategy(for: attempt)
 
+        let outputLanguage: String = {
+            switch language {
+            case .english:
+                return "English"
+            case .french:
+                return "French"
+            case .spanish:
+                return "Spanish"
+            case .arabic:
+                return "Arabic"
+            case .tunisian:
+                return "Tunisian Arabic"
+            }
+        }()
+
         return """
         TOPIC: \(topic)
         DIFFICULTY: \(difficultyLabel)
+        OUTPUT LANGUAGE: \(outputLanguage)
         ATTEMPT: \(attempt)
+
+        IMPORTANT LANGUAGE RULE:
+        Return BOTH concepts in \(outputLanguage).
+        Use the natural/common name in \(outputLanguage).
+        Proper nouns, brand names, character names, anime titles, movie titles, etc.
+        may remain unchanged when that is their commonly used name in \(outputLanguage).
 
         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         ALREADY USED — COMPLETE LIST (DO NOT USE ANY):
@@ -81,6 +104,7 @@ public enum WordPairPromptBuilder {
         ✓ Both concepts are from topic "\(topic)"
         ✓ Both are DISTINCT entities (not variations)
         ✓ NEITHER concept appears in the ALREADY USED list above
+        ✓ Both concepts are written in \(outputLanguage)
         ✓ similarity is a DECIMAL NUMBER matching the difficulty
         ✓ Not a parent/child, character/creator, or alias relationship
 
