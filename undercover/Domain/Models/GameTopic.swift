@@ -15,7 +15,7 @@ public struct GameTopic: Hashable, Identifiable {
     public let name: String     // Display name
     public let source: TopicSource
 
-    public init(id: String, name: String, source: TopicSource) {
+    public nonisolated init(id: String, name: String, source: TopicSource) {
         self.id = id
         self.name = name
         self.source = source

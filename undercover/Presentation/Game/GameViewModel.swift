@@ -8,7 +8,14 @@ import Combine
 
 @MainActor
 public final class GameViewModel: ObservableObject {
+    
+    public init() {
+        self.wordPairProvider = WordPairProvider()
+    }
 
+    init(wordPairProvider: any WordPairProviding) {
+        self.wordPairProvider = wordPairProvider
+    }
     // MARK: - Setup
 
     @Published public var selectedLanguage: AppLanguage = .english
@@ -58,8 +65,7 @@ public final class GameViewModel: ObservableObject {
 
     private var fsm = GameStateMachine()
     private let engine = GameEngine()
-    private let wordPairProvider = WordPairProvider()
-
+    private let wordPairProvider: any WordPairProviding
     private var timer: Timer?
 
     // MARK: - Derived
@@ -121,6 +127,23 @@ public final class GameViewModel: ObservableObject {
         return board.aliveCivilians == 0 &&
             board.aliveUndercover == 1 &&
             board.aliveMrWhite == 1
+    }
+    
+    // MARK: - Game Configuration
+
+    public func selectTopic(_ topic: String?) {
+        selectedTopic = topic
+        prepareWordPairsIfNeeded()
+    }
+
+    public func selectDifficulty(_ difficulty: PairDifficulty) {
+        selectedDifficulty = difficulty
+        prepareWordPairsIfNeeded()
+    }
+
+    public func selectLanguage(_ language: AppLanguage) {
+        selectedLanguage = language
+        prepareWordPairsIfNeeded()
     }
 
     // MARK: - Player Management

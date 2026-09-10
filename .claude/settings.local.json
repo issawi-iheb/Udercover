@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk grep *)",
+      "Bash(rtk ls *)",
+      "Bash(rtk xcodebuild *)",
+      "Bash(swiftc -FileReference-style\\\\colon undercover/Domain/GameStateMachine.swift -o /tmp/test)",
+      "Bash(rtk read *)",
+      "Bash(swiftc -FileReference-style\\\\colon /Users/iheb/Documents/OZORA/UndercoverGame/undercover/undercover/Domain/Models/PlayerRole.swift -o /tmp/playerrole_test)",
+      "Bash(swiftc /Users/iheb/Documents/OZORA/UndercoverGame/undercover/undercover/Domain/Models/PlayerRole.swift -o /tmp/playerrole_test)",
+      "Bash(swiftc /Users/iheb/Documents/OZORA/UndercoverGame/undercover/undercover/Domain/GameStateMachine.swift -o /tmp/gamestatetest)",
+      "Bash(swiftc /Users/iheb/Documents/OZORA/UndercoverGame/undercover/undercover/Domain/Models/PlayerRole.swift -o /tmp/playertest)",
+      "Bash(swiftc /Users/iheb/Documents/OZORA/UndercoverGame/undercover/undercover/Domain/GameStateMachine.swift /Users/iheb/Documents/OZORA/UndercoverGame/undercover/undercover/Domain/Models/PlayerRole.swift -o /tmp/combined_test)",
+      "Bash(swiftc -parse-as-library /Users/iheb/Documents/OZORA/UndercoverGame/undercover/undercover/Domain/GameStateMachine.swift /Users/iheb/Documents/OZORA/UndercoverGame/undercover/undercover/Domain/Models/PlayerRole.swift)",
+      "Bash(swift -frontend -typecheck /Users/iheb/Documents/OZORA/UndercoverGame/undercover/undercover/Domain/GameStateMachine.swift /Users/iheb/Documents/OZORA/UndercoverGame/undercover/undercover/Domain/Models/PlayerRole.swift)",
+      "Bash(xcodebuild test *)",
+      "Bash(rtk find *)",
+      "Bash(xcodebuild -scheme undercover -destination 'platform=iOS Simulator,name=iPhone 15' -quiet)",
+      "Bash(xcodebuild -scheme undercover -destination 'platform=iOS Simulator,name=iPhone 17' build)",
+      "Bash(rtk git *)",
+      "Bash(xcodebuild -scheme undercover -destination 'platform=iOS Simulator,name=iPhone 15' build)",
+      "Bash(xcodebuild -scheme undercover -destination 'platform=iOS Simulator,OS=latest,name=iPad \\(A16\\)' build)",
+      "Bash(swiftc /Users/iheb/Documents/OZORA/UndercoverGame/undercover/undercover/Presentation/GameViewModel.swift -target arm64-apple-ios26.5-simulator -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.5.sdk -I /Users/iheb/Documents/OZORA/UndercoverGame/undercover/undercover -F /Users/iheb/Documents/OZORA/UndercoverGame/undercover/undercover -j 1)",
+      "Bash(xcodebuild -list)",
+      "Bash(xcodebuild -scheme undercover build)",
+      "Bash(xcodebuild -scheme undercover -destination 'platform=iOS Simulator,name=iPad \\(A16\\)' build)",
+      "Bash(xcodebuild -scheme undercover -destination 'platform=iOS Simulator,name=iPad \\(A16\\),OS=26.5' build)",
+      "Bash(xcodebuild -scheme undercover -destination 'platform=iOS Simulator,name=iPad \\(A16\\),OS=26.5' -quiet build)",
+      "Bash(xcodebuild -scheme undercover -showBuildSettings)",
+      "Bash(xcodebuild -project undercover.xcodeproj -scheme undercover -destination 'platform=iOS Simulator,name=iPhone 14,OS=latest' build)",
+      "Bash(xcodebuild -project undercover.xcodeproj -scheme undercover -destination 'platform=iOS Simulator,name=iPhone 17' build)",
+      "Bash(xcodebuild -scheme undercover -destination 'platform=iOS Simulator,name=iPhone 15' -quiet build)",
+      "Bash(xcodebuild -scheme undercover -destination 'platform=iOS,id:dvtdevice-DVTiPhonePlaceholder-iphoneos:placeholder' -quiet build)",
+      "Bash(xcodebuild -scheme undercover -destination 'generic/platform=iOS' build)",
+      "Bash(rtk wc *)",
+      "Bash(swiftc GameEngineTests.swift -o GameEngineTests)"
+    ]
+  }
+}

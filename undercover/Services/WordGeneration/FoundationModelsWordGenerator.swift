@@ -14,8 +14,8 @@ import FoundationModels
 
 public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
 
-    public let generatorName =
-        "Apple Intelligence (On-Device)"
+    public let generatorName = "Apple Intelligence (On-Device)"
+    public let kind: WordGeneratorKind = .background
 
     // MARK: - Availability
 
@@ -97,9 +97,9 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
 
                     print("""
                     ✅ [FoundationModels] Selected:
-                    \(pair.civilian.localized(for: language))
+                    \( pair.civilian.localized(for: language))
                     /
-                    \(pair.undercover.localized(for: language))
+                    \( pair.undercover.localized(for: language))
                     """)
 
                     return pair
@@ -131,7 +131,7 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
 
     // MARK: - Candidate Selection
 
-    private nonisolated func firstAvailablePair(
+     nonisolated func firstAvailablePair(
         from pairs: [WordPair],
         language: AppLanguage,
         excluding excluded: Set<String>
@@ -174,7 +174,7 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
 
     // MARK: - Exclusion Matching
 
-    private nonisolated static func matchesExcluded(
+    nonisolated static func matchesExcluded(
         _ candidate: String,
         excluded: Set<String>
     ) -> Bool {
@@ -239,7 +239,7 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
         )
 
         let prompt =
-            WordPairPromptBuilder.build(
+        await WordPairPromptBuilder.build(
                 topic: topic.isEmpty
                     ? DefaultTopic.value
                 : topic, language: language,
@@ -281,7 +281,7 @@ public actor FoundationModelsWordGenerator: WordGeneratorProtocol {
 
     // MARK: - JSON Parsing
 
-    private nonisolated static func parseAndValidateJSON(
+    nonisolated static func parseAndValidateJSON(
         _ text: String,
         topic: String,
         language: AppLanguage,

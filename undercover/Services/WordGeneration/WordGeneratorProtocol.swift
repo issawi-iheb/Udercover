@@ -8,6 +8,10 @@
 
 import Foundation
 
+public enum WordGeneratorKind: Sendable, nonisolated Equatable {
+    case local
+    case background
+}
 /// Protocol that all word-pair generators must conform to.
 ///
 /// Implementations are actors to safely manage their own caches.
@@ -19,6 +23,7 @@ public protocol WordGeneratorProtocol: Actor {
 
     /// Human-readable name of this generator (for logging)
     var generatorName: String { get }
+    nonisolated var kind: WordGeneratorKind { get }
 
     /// Whether this generator is available on this device/configuration
     var isAvailable: Bool { get }
@@ -42,10 +47,9 @@ public protocol WordGeneratorProtocol: Actor {
 }
 
 /// Errors that can occur during word generation.
-public enum WordGeneratorError: LocalizedError, Sendable {
-
+public enum WordGeneratorError: LocalizedError, Sendable, Equatable {
     case unavailable(String)
-    case networkError(Error)
+    case networkError(String)
     case invalidResponse
     case parsingFailed(String)
     case noPairsAvailable
@@ -54,8 +58,10 @@ public enum WordGeneratorError: LocalizedError, Sendable {
         switch self {
         case .unavailable(let reason):
             return "Generator unavailable: \(reason)"
-        case .networkError(let error):
-            return "Network error: \(error.localizedDescription)"
+
+        case .networkError(let message):
+            return "Network error: \(message)"
+
         case .invalidResponse:
             return "Invalid response from generator"
         case .parsingFailed(let detail):

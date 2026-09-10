@@ -1,3 +1,4 @@
+
 //
 //  PlayedPairStore.swift
 //  undercoverApp
@@ -38,7 +39,6 @@ public final class PlayedPairRecord {
         undercover: String,
         topic: String
     ) {
-
         let civilianNormalized =
             NormalizationUtility.normalize(civilian)
 
@@ -74,18 +74,31 @@ public actor PlayedPairStore {
         category: "PlayedPairStore"
     )
 
-    public init() {
+    // MARK: - Initialization
 
+    /// Creates the persistent production store.
+    public init() {
         let schema = Schema([
             PlayedPairRecord.self
         ])
 
-        let configuration = ModelConfiguration(
-            schema: schema,
-            isStoredInMemoryOnly: false
-        )
-
         do {
+            let applicationSupportURL = try FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+
+            try FileManager.default.createDirectory(
+                at: applicationSupportURL,
+                withIntermediateDirectories: true
+            )
+
+            let configuration = ModelConfiguration(
+                schema: schema,
+                isStoredInMemoryOnly: false
+            )
 
             container = try ModelContainer(
                 for: schema,
@@ -93,12 +106,10 @@ public actor PlayedPairStore {
             )
 
         } catch {
-
-            let fallbackConfiguration =
-                ModelConfiguration(
-                    schema: schema,
-                    isStoredInMemoryOnly: true
-                )
+            let fallbackConfiguration = ModelConfiguration(
+                schema: schema,
+                isStoredInMemoryOnly: true
+            )
 
             container = try! ModelContainer(
                 for: schema,
@@ -107,6 +118,32 @@ public actor PlayedPairStore {
 
             Self.logger.warning(
                 "PlayedPairStore: using in-memory fallback — \(String(describing: error))"
+            )
+        }
+    }
+
+    /// Creates a store with configurable persistence.
+    ///
+    /// Use `isStoredInMemoryOnly: true` in tests to guarantee
+    /// isolation from the user's persistent game history.
+    public init(isStoredInMemoryOnly: Bool) {
+        let schema = Schema([
+            PlayedPairRecord.self
+        ])
+
+        let configuration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: isStoredInMemoryOnly
+        )
+
+        do {
+            container = try ModelContainer(
+                for: schema,
+                configurations: configuration
+            )
+        } catch {
+            fatalError(
+                "Failed to create PlayedPairStore: \(error)"
             )
         }
     }
@@ -147,6 +184,8 @@ public actor PlayedPairStore {
 
     // MARK: - Can Use
 
+    /// Returns true when the pair has never been played
+    /// and neither concept has been used for the topic.
     public func canUseWords(
         civilian: String,
         undercover: String,
@@ -180,9 +219,9 @@ public actor PlayedPairStore {
                 }
             )
 
+        // Exact pair already played.
         if let count = try? context.fetchCount(descriptor),
            count > 0 {
-            // Exact pair already played
             return false
         }
 
@@ -190,6 +229,7 @@ public actor PlayedPairStore {
             for: topic
         )
 
+        // Individual concept already used.
         for record in records {
 
             if record.civilianConcept == civilianNormalized ||
@@ -206,6 +246,7 @@ public actor PlayedPairStore {
 
     // MARK: - Mark Played
 
+    /// Persists a pair as played.
     public func markAsPlayed(
         civilian: String,
         undercover: String,
@@ -223,7 +264,6 @@ public actor PlayedPairStore {
         context.insert(record)
 
         do {
-
             try context.save()
 
             Self.logger.notice(
@@ -251,6 +291,10 @@ public actor PlayedPairStore {
 
     // MARK: - Clear History
 
+    /// Clears played history.
+    ///
+    /// Pass a topic to clear only that topic.
+    /// Pass an empty string to clear all history.
     public func clearHistory(
         for topic: String = ""
     ) async {
@@ -302,6 +346,10 @@ public actor PlayedPairStore {
 
     // MARK: - Count
 
+    /// Returns the number of played pairs.
+    ///
+    /// Pass a topic to count only that topic.
+    /// Pass an empty string to count all pairs.
     public func count(
         for topic: String = ""
     ) async -> Int {
@@ -335,6 +383,7 @@ public actor PlayedPairStore {
 
     // MARK: - Topics
 
+    /// Returns all topics that contain played pairs.
     public func topics() async -> [String] {
 
         let records = fetchRecordsForAllTopics()

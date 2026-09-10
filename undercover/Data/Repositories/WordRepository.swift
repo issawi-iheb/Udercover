@@ -8,22 +8,23 @@
 
 import Foundation
 
-public final class WordRepository: Sendable {
+public final class WordRepository: Sendable, TopicRepository {
 
     private let database: [String: [WordPair]]
-    private static let classifier = PairDifficultyClassifier()
+    private nonisolated static let classifier = PairDifficultyClassifier()
 
-    public var topics: [String] {
+    nonisolated public var topics: [String] {
         database.keys.sorted()
     }
 
-    // MARK: - Init
-
-    public init() {
+    nonisolated public init() {
         guard
             let url = Bundle.main.url(forResource: "words", withExtension: "json"),
             let data = try? Data(contentsOf: url),
-            let db = try? JSONDecoder().decode([String: [WordPair]].self, from: data)
+            let db = try? JSONDecoder().decode(
+                [String: [WordPair]].self,
+                from: data
+            )
         else {
             print("⚠️ WordRepository: words.json missing or undecodable.")
             database = [:]
@@ -36,47 +37,40 @@ public final class WordRepository: Sendable {
         print("✅ WordRepository: \(total) pairs across \(db.count) topics.")
     }
 
-    // MARK: - Public API
-
-    /// Get a random pair for the given topic, language, and difficulty.
-    /// Filters out concepts in the exclusion set.
-    public func randomPair(
+    nonisolated public func randomPair(
         topic: String,
         language: AppLanguage,
         difficulty: PairDifficulty,
         excluding: Set<String> = []
     ) -> WordPair? {
 
-        // Normalize exclusions using centralized utility
         let normalizedExcluding = Set(
             excluding.map(NormalizationUtility.normalize)
         )
 
         let candidates = pairs(for: topic).filter { pair in
-            
-            // 1. Must have translation for requested language
+
             guard !pair.civilian.localized(for: language).isEmpty else {
                 return false
             }
 
-            // 2. Must match requested difficulty
-            guard Self.classifier.classify(score: pair.similarity ?? 0.62) == difficulty else {
+            guard Self.classifier.classify(
+                score: pair.similarity ?? 0.62
+            ) == difficulty else {
                 return false
             }
 
-            // 3. Neither concept can be in exclusion set (CRITICAL)
             let civilian = NormalizationUtility.normalize(
                 pair.civilian.localized(for: language)
             )
+
             let undercover = NormalizationUtility.normalize(
                 pair.undercover.localized(for: language)
             )
 
             guard !normalizedExcluding.contains(civilian),
-                  !normalizedExcluding.contains(undercover) else {
-                print("""
-                🚫 [Repository] Excluded: \(civilian) / \(undercover)
-                """)
+                  !normalizedExcluding.contains(undercover)
+            else {
                 return false
             }
 
@@ -86,17 +80,15 @@ public final class WordRepository: Sendable {
         return candidates.randomElement()
     }
 
-    /// Get all pairs for a topic (used by UI to show stats).
-    public func allPairs(for topic: String) -> [WordPair] {
+    nonisolated public func allPairs(for topic: String) -> [WordPair] {
         pairs(for: topic)
     }
 
-    // MARK: - Private
-
-    private func pairs(for topic: String) -> [WordPair] {
+    nonisolated func pairs(for topic: String) -> [WordPair] {
         if topic.isEmpty {
             return database.values.flatMap { $0 }
         }
+
         return database[topic] ?? []
     }
 }

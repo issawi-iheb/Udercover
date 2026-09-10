@@ -7,17 +7,28 @@
 
 import Foundation
 
+public protocol TopicRepository: Sendable {
+    nonisolated var topics: [String] { get }
+}
+
 public actor TopicService {
 
-    private let repository: WordRepository
-    private let aiProvider: FoundationModelsTopicProvider?
+    private let repository: any TopicRepository
+    private let aiProvider: (any TopicProvider)?
     private var cachedTopics: [GameTopic] = []
 
     public init(
-        repository: WordRepository = WordRepository(),
-        aiProvider: FoundationModelsTopicProvider? = nil
+        repository: any TopicRepository,
+        aiProvider: (any TopicProvider)? = nil
     ) {
         self.repository = repository
+        self.aiProvider = aiProvider
+    }
+
+    public init(
+        aiProvider: (any TopicProvider)? = nil
+    ) {
+        self.repository = WordRepository()
         self.aiProvider = aiProvider
     }
 

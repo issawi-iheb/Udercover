@@ -1,0 +1,30 @@
+{
+  "animals": [
+    {
+      "civilian": {"en": "cat"},
+      "undercover": {"en": "dog"},
+      "topic": "animals",
+      "similarity": 0.5
+    },
+    {
+      "civilian": {"en": "lion"},
+      "undercover": {"en": "tiger"},
+      "topic": "animals",
+      "similarity": 0.6
+    }
+  ],
+  "fruits": [
+    {
+      "civilian": {"en": "apple"},
+      "undercover": {"en": "banana"},
+      "topic": "fruits",
+      "similarity": 0.4
+    },
+    {
+      "civilian": {"en": "orange"},
+      "undercover": {"en": "grape"},
+      "topic": "fruits",
+      "similarity": 0.7
+    }
+  ]
+}

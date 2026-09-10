@@ -7,11 +7,11 @@ import Foundation
 
 // MARK: - LocalizedWord
 
-public struct LocalizedWord: Codable, Hashable, Sendable {
+public struct LocalizedWord: Codable, Hashable, Sendable, nonisolated Equatable {
 
     public let values: [String: String]
 
-    public init(values: [String: String]) {
+    public nonisolated init(values: [String: String]) {
         self.values = values
     }
 
@@ -25,7 +25,7 @@ public struct LocalizedWord: Codable, Hashable, Sendable {
         try container.encode(values)
     }
 
-    public func localized(for language: AppLanguage) -> String {
+    nonisolated public func localized(for language: AppLanguage) -> String {
 
         if let value = values[language.rawValue],
            !value.isEmpty {
@@ -42,7 +42,7 @@ public struct LocalizedWord: Codable, Hashable, Sendable {
         } ?? ""
     }
 
-    public var allValues: [String] {
+    nonisolated public var allValues: [String] {
         values.values.filter {
             !$0.isEmpty
         }
@@ -52,7 +52,7 @@ public struct LocalizedWord: Codable, Hashable, Sendable {
     ///
     /// The actual language does not matter here.
     /// We only need one stable value to identify the concept.
-    public var firstNonEmpty: String {
+    nonisolated public var firstNonEmpty: String {
         values
             .sorted(by: { $0.key < $1.key })
             .compactMap { $0.value.isEmpty ? nil : $0.value }
@@ -62,7 +62,7 @@ public struct LocalizedWord: Codable, Hashable, Sendable {
 
 // MARK: - WordPair
 
-public struct WordPair: Codable, Identifiable, Sendable {
+public struct WordPair: Codable, Identifiable, Sendable, nonisolated Equatable {
 
     public var id: String {
 

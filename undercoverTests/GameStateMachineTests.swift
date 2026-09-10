@@ -3,16 +3,6 @@
 //  undercoverTests
 //
 
-//
-//  GameStateMachineTests.swift
-//  undercoverTests
-//
-
-//
-//  GameStateMachineTests.swift
-//  undercoverTests
-//
-
 import Testing
 @testable import undercover
 
@@ -110,7 +100,6 @@ struct GameStateMachineTests {
         var fsm = GameStateMachine(initialState: .discussion(round: 1))
 
         _ = fsm.handle(.discussionEnded(round: 1))
-
         _ = fsm.handle(.votingFinished(
             eliminated: .civilian,
             aliveCivilians: 1,
@@ -451,5 +440,96 @@ struct GameStateMachineTests {
         ))
 
         #expect(fsm.state == .results(.undercoverWins))
+    }
+
+    // MARK: - Additional Edge Case Tests
+
+    @Test
+    func test_twoPlayers_civilianVsUndercover_noMrWhite_undercoverWins() {
+        // 1C + 1U + 0MW -> Undercover wins (1 >= 1)
+        var fsm = GameStateMachine(initialState: .discussion(round: 1))
+
+        _ = fsm.handle(.discussionEnded(round: 1))
+        _ = fsm.handle(.votingFinished(
+            eliminated: .civilian,  // This would leave 0C, 1U, 0MW but let's think...
+            aliveCivilians: 0,
+            aliveUndercover: 1,
+            aliveMrWhite: 0,
+            round: 1
+        ))
+
+        #expect(fsm.state == .results(.undercoverWins))
+    }
+
+    @Test
+    func test_twoPlayers_twoCivilians_noMrWhite_civiliansWin() {
+        // 2C + 0U + 0MW -> Civilians win (0 undercover)
+        var fsm = GameStateMachine(initialState: .discussion(round: 1))
+
+        _ = fsm.handle(.discussionEnded(round: 1))
+        _ = fsm.handle(.votingFinished(
+            eliminated: .undercover,  // Assuming we started with 1U and eliminated it
+            aliveCivilians: 2,
+            aliveUndercover: 0,
+            aliveMrWhite: 0,
+            round: 1
+        ))
+
+        #expect(fsm.state == .results(.civiliansWin))
+    }
+
+    @Test
+    func test_mrWhiteGuessCorrect_withOpponentsStillAlive_mrWhiteWins() {
+        // Even if there are still civilians and undercover, if Mr White guesses correctly, he wins
+        var fsm = GameStateMachine(initialState: .mrWhiteGuess(round: 1))
+
+        _ = fsm.handle(.mrWhiteGuessResult(
+            correct: true,
+            aliveCivilians: 2,
+            aliveUndercover: 2,
+            round: 1
+        ))
+
+        #expect(fsm.state == .results(.mrWhiteWins))
+    }
+
+    @Test
+    func test_mrWhiteGuessWrong_undercoverBeatsCivilians_undercoverWins() {
+        // After wrong guess: 1C, 2U, 0MW -> Undercover wins (2 >= 1)
+        var fsm = GameStateMachine(initialState: .mrWhiteGuess(round: 1))
+
+        _ = fsm.handle(.mrWhiteGuessResult(
+            correct: false,
+            aliveCivilians: 1,
+            aliveUndercover: 2,
+            round: 1
+        ))
+
+        #expect(fsm.state == .results(.undercoverWins))
+    }
+
+    @Test
+    func test_mrWhiteGuessWrong_gameContinuesWhenUndercoverHasNotReachedParity() {
+        // After a wrong guess:
+        // 2 civilians, 1 undercover, 0 Mr White.
+        // The undercover has not reached parity with the civilians,
+        // so the game continues with the next discussion round.
+
+        var fsm = GameStateMachine(
+            initialState: .mrWhiteGuess(round: 1)
+        )
+
+        _ = fsm.handle(
+            .mrWhiteGuessResult(
+                correct: false,
+                aliveCivilians: 2,
+                aliveUndercover: 1,
+                round: 1
+            )
+        )
+
+        #expect(
+            fsm.state == .discussion(round: 2)
+        )
     }
 }

@@ -10,7 +10,7 @@ import Foundation
 
 public enum WordPairPromptBuilder {
 
-    static let systemPrompt = """
+    nonisolated static let systemPrompt = """
     You generate word pairs for the party game "Undercover".
 
     GAME RULES:

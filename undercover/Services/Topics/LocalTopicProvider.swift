@@ -25,6 +25,3 @@ public actor LocalTopicProvider: TopicProvider {
         repository.topics
     }
 }
-
-// MARK: - Topic Service
-

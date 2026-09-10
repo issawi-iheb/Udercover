@@ -34,7 +34,7 @@ public actor WordGeneratorService {
 
         guard let local = generators.first(
             where: {
-                $0 is LocalWordGenerator
+                $0.kind == .local
             }
         ) else {
             throw WordGeneratorError.noPairsAvailable
@@ -65,7 +65,7 @@ public actor WordGeneratorService {
 
         guard let llm = generators.first(
             where: {
-                $0 is FoundationModelsWordGenerator
+                $0.kind == .background
             }
         ) else {
             throw WordGeneratorError.noPairsAvailable

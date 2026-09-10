@@ -10,7 +10,7 @@ import Foundation
 
 // MARK: - State
 
-public enum GameState: Equatable, Sendable {
+public enum GameState: nonisolated Equatable, Sendable {
     case setup
     case loadingWords
     case reveal(index: Int, step: RevealStep)
@@ -20,14 +20,14 @@ public enum GameState: Equatable, Sendable {
     case results(GameResult)
 }
 
-public enum RevealStep: Equatable, Sendable {
+public enum RevealStep: nonisolated Equatable, Sendable {
     case passDevice
     case showWord
 }
 
 // MARK: - Result
 
-public enum GameResult: Equatable, Sendable {
+public enum GameResult: nonisolated Equatable, Sendable {
     case civiliansWin
     case undercoverWins
     case mrWhiteWins
@@ -66,7 +66,7 @@ public enum GameEvent: Sendable {
 
 // MARK: - Machine
 
-public struct GameStateMachine: Sendable, Equatable {
+public struct GameStateMachine: Sendable, nonisolated Equatable {
     
     public private(set) var state: GameState = .setup
     

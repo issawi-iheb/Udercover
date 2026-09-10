@@ -86,16 +86,20 @@ public struct LobbyView: View {
                 ForEach(PairDifficulty.allCases, id: \.self) { diff in
                     DifficultyButton(
                         difficulty: diff,
-                        isSelected: viewModel.selectedDifficulty == diff
-                    ) {
-                        Haptic.light()
-                        withAnimation(.appSnap) { viewModel.selectedDifficulty = diff }
-                    }
+                        isSelected: viewModel.selectedDifficulty == diff,
+                        action: {
+                            Haptic.light()
+                            withAnimation(.appSnap) {
+                                viewModel.selectDifficulty(diff)
+                            }
+                        }
+                    )
                 }
             }
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 16)
+            .animation(.appDramatic.delay(0.12), value: appeared)
         }
-        .opacity(appeared ? 1 : 0).offset(y: appeared ? 0 : 16)
-        .animation(.appDramatic.delay(0.12), value: appeared)
     }
 
     // MARK: - Topic pills
@@ -116,7 +120,9 @@ public struct LobbyView: View {
                     TopicPill(label: "Random", icon: "shuffle",
                               isSelected: viewModel.selectedTopic == nil) {
                         Haptic.light()
-                        withAnimation(.appSnap) { viewModel.selectedTopic = nil }
+                        withAnimation(.appSnap) {
+                            viewModel.selectTopic(nil)
+                        }
                     }
                     ForEach(appState.topics) { topic in
 
@@ -128,7 +134,7 @@ public struct LobbyView: View {
                             Haptic.light()
 
                             withAnimation(.appSnap) {
-                                viewModel.selectedTopic = topic.id
+                                viewModel.selectTopic(topic.id)
                             }
                         }
                     }
@@ -151,7 +157,13 @@ public struct LobbyView: View {
                 Text("Language")
                     .font(AppFont.body(size: 15, weight: .medium)).foregroundStyle(.white)
                 Spacer()
-                Picker("", selection: $viewModel.selectedLanguage) {
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { viewModel.selectedLanguage },
+                        set: { viewModel.selectLanguage($0) }
+                    )
+                ) {
                     ForEach(AppLanguage.allCases, id: \.self) {
                         Text($0.displayName).tag($0)
                     }

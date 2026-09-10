@@ -45,15 +45,19 @@ final class WordPairProvider {
 
     // MARK: - Services
 
-    private let pairStore = PlayedPairStore()
-    private let nextPairMutex = AsyncMutex()
+    private let generatorService: WordGeneratorService
+    private let pairStore: PlayedPairStore
+    private let nextPairMutex: AsyncMutex
 
-    private lazy var generatorService = WordGeneratorService(
-        generators: [
-            LocalWordGenerator(),
-            FoundationModelsWordGenerator()
-        ]
-    )
+    init(
+        generatorService: WordGeneratorService = .live(),
+        pairStore: PlayedPairStore = PlayedPairStore(),
+        nextPairMutex: AsyncMutex = AsyncMutex()
+    ) {
+        self.generatorService = generatorService
+        self.pairStore = pairStore
+        self.nextPairMutex = nextPairMutex
+    }
 
     // MARK: - Game Start
 
@@ -113,8 +117,7 @@ final class WordPairProvider {
                     for: configuration.topic
                 )
 
-                let cached = await self.cacheConcepts()
-
+                let cached = self.currentCacheConcepts()
                 let exclusions = used.union(cached)
 
                 let pair = try await self.generatorService.generateLocalPair(
@@ -216,8 +219,7 @@ final class WordPairProvider {
                     for: configuration.topic
                 )
 
-                let cached = await self.cacheConcepts()
-
+                let cached = self.currentCacheConcepts()
                 let exclusions = used.union(cached)
 
                 do {
@@ -274,25 +276,36 @@ final class WordPairProvider {
 
     // MARK: - Insert
 
+    /// Inserts a generated pair into the prepared cache.
+    ///
+    /// The mutex protects the cache transaction across the async
+    /// `PlayedPairStore` lookup.
     @discardableResult
     private func insertPreparedPair(
         _ pair: WordPair,
         configuration: WordBatchConfiguration
     ) async -> Bool {
-        guard preparedConfiguration == configuration else {
-            return false
-        }
 
-        let pairConcepts = NormalizationUtility.conceptsFromPair(
-            civilian: pair.civilian.firstNonEmpty,
-            undercover: pair.undercover.firstNonEmpty
-        )
+        await nextPairMutex.withLock {
 
-        let used = await pairStore.usedConcepts(
-            for: configuration.topic
-        )
+            guard preparedConfiguration == configuration else {
+                return false
+            }
 
-        return await nextPairMutex.withLock {
+            guard preparedWordPairs.count < targetPreparedPairs else {
+                return false
+            }
+
+            let pairConcepts = NormalizationUtility.conceptsFromPair(
+                civilian: pair.civilian.firstNonEmpty,
+                undercover: pair.undercover.firstNonEmpty
+            )
+
+            let used = await pairStore.usedConcepts(
+                for: configuration.topic
+            )
+
+            // Re-check after the await because MainActor is re-entrant.
             guard preparedConfiguration == configuration else {
                 return false
             }
@@ -314,6 +327,7 @@ final class WordPairProvider {
             }
 
             preparedWordPairs.append(pair)
+
             return true
         }
     }
@@ -371,6 +385,10 @@ final class WordPairProvider {
         language: AppLanguage,
         difficulty: PairDifficulty
     ) async throws -> WordPair {
+        
+        guard playerCount >= 3 else {
+            throw WordPairProviderError.unableToProvidePair
+        }
         prepareForGameStart(
             playerCount: playerCount,
             topic: topic,
@@ -392,7 +410,7 @@ final class WordPairProvider {
             language: language,
             difficulty: difficulty
         ) {
-            await handleCacheAfterConsumption(
+            handleCacheAfterConsumption(
                 playerCount: playerCount,
                 topic: topic,
                 language: language,
@@ -425,7 +443,7 @@ final class WordPairProvider {
             language: language,
             difficulty: difficulty
         ) {
-            await handleCacheAfterConsumption(
+            handleCacheAfterConsumption(
                 playerCount: playerCount,
                 topic: topic,
                 language: language,
@@ -440,16 +458,30 @@ final class WordPairProvider {
 
     // MARK: - Cache Consumption
 
+    /// Consumes one cached pair and marks it as played.
+    ///
+    /// The entire operation is protected by the mutex:
+    ///
+    ///   find pair
+    ///      ↓
+    ///   remove pair
+    ///      ↓
+    ///   persist as played
+    ///
+    /// This prevents two concurrent `nextPair()` calls from
+    /// interleaving this transaction.
     private func consumeCachedPair(
         topic: String,
         language: AppLanguage,
         difficulty: PairDifficulty
     ) async -> WordPair? {
-        let used = await pairStore.usedConcepts(
-            for: topic
-        )
 
-        let pair: WordPair? = await nextPairMutex.withLock {
+        await nextPairMutex.withLock {
+
+            let used = await pairStore.usedConcepts(
+                for: topic
+            )
+
             guard let configuration = preparedConfiguration,
                   configuration.topic == topic,
                   configuration.language == language,
@@ -471,28 +503,28 @@ final class WordPairProvider {
                 return nil
             }
 
-            return preparedWordPairs.remove(at: index)
-        }
+            let pair = preparedWordPairs.remove(at: index)
 
-        guard let pair else {
-            return nil
-        }
+            do {
+                try await pairStore.markAsPlayed(
+                    civilian: pair.civilian.firstNonEmpty,
+                    undercover: pair.undercover.firstNonEmpty,
+                    topic: topic
+                )
 
-        do {
-            try await pairStore.markAsPlayed(
-                civilian: pair.civilian.firstNonEmpty,
-                undercover: pair.undercover.firstNonEmpty,
-                topic: topic
-            )
+                return pair
 
-            return pair
-
-        } catch {
-            await nextPairMutex.withLock {
+            } catch {
+                // Persistence failed.
+                // Restore the pair before releasing the mutex.
                 preparedWordPairs.insert(pair, at: 0)
-            }
 
-            return nil
+                print(
+                    "⚠️ [Provider] Failed to mark pair as played: \(error)"
+                )
+
+                return nil
+            }
         }
     }
 
@@ -528,12 +560,6 @@ final class WordPairProvider {
     }
 
     // MARK: - Cache Helpers
-
-    private func cacheConcepts() async -> Set<String> {
-        await nextPairMutex.withLock {
-            currentCacheConcepts()
-        }
-    }
 
     private func currentCacheConcepts() -> Set<String> {
         var concepts = Set<String>()
@@ -583,6 +609,20 @@ final class WordPairProvider {
 
 // MARK: - Errors
 
-private enum WordPairProviderError: Error {
+enum WordPairProviderError: Error, Equatable {
     case unableToProvidePair
 }
+
+// MARK: - Live Service
+
+extension WordGeneratorService {
+    static func live() -> WordGeneratorService {
+        WordGeneratorService(
+            generators: [
+                LocalWordGenerator(),
+                FoundationModelsWordGenerator()
+            ]
+        )
+    }
+}
+extension WordPairProvider: WordPairProviding {}

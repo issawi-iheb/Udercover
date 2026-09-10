@@ -9,8 +9,8 @@ import Foundation
 
 public actor LocalWordGenerator: WordGeneratorProtocol {
 
-    public let generatorName =
-        "Local (Offline)"
+    public let generatorName = "Local (Offline)"
+    public let kind: WordGeneratorKind = .local
 
     public var isAvailable: Bool {
         true
