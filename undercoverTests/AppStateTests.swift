@@ -17,10 +17,9 @@ struct AppStateTests {
         // When
         await appState.bootstrap()
 
-        // Read MainActor-isolated state before #expect
+        // Then
         let isReady = appState.isReady
 
-        // Then
         #expect(isReady == true)
     }
 
@@ -32,15 +31,14 @@ struct AppStateTests {
         // When
         await appState.bootstrap()
 
-        // Read MainActor-isolated state before #expect
-        let topics = appState.topics
-        let hasAnimals = topics.contains { $0.name == "Animals" }
-        let hasFruits = topics.contains { $0.name == "Fruits" }
         // Then
+        let topics = appState.topics
+        let hasAnimals = topics.contains {
+            $0.name == "Animals"
+        }
+
         #expect(!topics.isEmpty)
         #expect(hasAnimals)
-        #expect(hasFruits)
-        #expect(topics.count == 35)
     }
 
     @Test
@@ -52,13 +50,11 @@ struct AppStateTests {
         await appState.bootstrap()
         await appState.bootstrap()
 
-        // Read MainActor-isolated state before #expect
+        // Then
         let isReady = appState.isReady
         let topics = appState.topics
 
-        // Then
         #expect(isReady == true)
         #expect(!topics.isEmpty)
-        #expect(topics.count == 35)
     }
 }

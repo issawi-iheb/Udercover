@@ -133,17 +133,17 @@ public final class GameViewModel: ObservableObject {
 
     public func selectTopic(_ topic: String?) {
         selectedTopic = topic
-        prepareWordPairsIfNeeded()
+        resetAndPrepareWordPairs()
     }
 
     public func selectDifficulty(_ difficulty: PairDifficulty) {
         selectedDifficulty = difficulty
-        prepareWordPairsIfNeeded()
+        resetAndPrepareWordPairs()
     }
 
     public func selectLanguage(_ language: AppLanguage) {
         selectedLanguage = language
-        prepareWordPairsIfNeeded()
+        resetAndPrepareWordPairs()
     }
 
     // MARK: - Player Management
@@ -550,6 +550,17 @@ public final class GameViewModel: ObservableObject {
     // MARK: - Word Preparation
 
     private func prepareWordPairsIfNeeded() {
+        wordPairProvider.prepareIfNeeded(
+            playerCount: players.count,
+            topic: selectedTopic,
+            language: selectedLanguage,
+            difficulty: selectedDifficulty
+        )
+    }
+    
+    private func resetAndPrepareWordPairs() {
+        wordPairProvider.reset()
+
         wordPairProvider.prepareIfNeeded(
             playerCount: players.count,
             topic: selectedTopic,

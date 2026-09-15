@@ -15,11 +15,11 @@ public actor FoundationModelsTopicProvider: TopicProvider {
 
     public init() {}
 
-    private var cachedTopics: [String]?
+    private var cachedTopics: [GameTopic]?
 
     // MARK: - Public API
 
-    public func topics() async -> [String] {
+    public func topics() async -> [GameTopic] {
 
         // Return cached topics if already generated.
         if let cachedTopics, !cachedTopics.isEmpty {
@@ -42,7 +42,7 @@ public actor FoundationModelsTopicProvider: TopicProvider {
                 let json = Self.cleanJSON(response.content)
 
                 guard let data = json.data(using: .utf8) else {
-                    return Self.fallbackTopics
+                    return Self.fallbackGameTopics()
                 }
 
                 let generatedTopics = try JSONDecoder().decode(
@@ -70,12 +70,19 @@ public actor FoundationModelsTopicProvider: TopicProvider {
                     Expected exactly 20 topics, got \(cleanedTopics.count)
                     """)
 
-                    return Self.fallbackTopics
+                    return Self.fallbackGameTopics()
                 }
+                
+                let topics = cleanedTopics.map { topic in
+                    GameTopic(
+                        id: Self.normalizeForID(topic),
+                        name: topic.capitalized,
+                        source: .ai
+                    )
+                }
+                self.cachedTopics = topics
 
-                self.cachedTopics = cleanedTopics
-
-                return cleanedTopics
+                return topics
 
             } catch {
                 print(
@@ -83,13 +90,13 @@ public actor FoundationModelsTopicProvider: TopicProvider {
                     error
                 )
 
-                return Self.fallbackTopics
+                return Self.fallbackGameTopics()
             }
         }
 
         #endif
 
-        return Self.fallbackTopics
+        return Self.fallbackGameTopics()
     }
 
     // MARK: - System Prompt
@@ -190,16 +197,29 @@ public actor FoundationModelsTopicProvider: TopicProvider {
         "Sports Teams",
         "Mythology",
         "Fashion",
-        "Architecture",
-        "Cartoons",
-        "Art",
-        "Science",
-        "Comedy",
-        "Cars",
-        "Professions",
-        "Famous Places",
-        "Board Games",
-        "Internet Culture",
-        "Space"
+        "Architecture"
     ]
+    
+    private nonisolated static func fallbackGameTopics() -> [GameTopic] {
+        fallbackTopics.map { topic in
+            GameTopic(
+                id: normalizeForID(topic),
+                name: topic,
+                source: .ai
+            )
+        }
+    }
+    
+    private nonisolated static func normalizeForID(
+        _ value: String
+    ) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .folding(
+                options: .diacriticInsensitive,
+                locale: .current
+            )
+            .replacingOccurrences(of: " ", with: "-")
+    }
 }

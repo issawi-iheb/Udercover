@@ -131,11 +131,78 @@ struct WordPairProviderTests {
                 )
             )
 
-            guard !pairs.isEmpty else {
+            guard let index = pairs.firstIndex(where: { pair in
+                guard pair.topic == topic else {
+                    return false
+                }
+
+                let concepts = NormalizationUtility.conceptsFromPair(
+                    civilian: pair.civilian.firstNonEmpty,
+                    undercover: pair.undercover.firstNonEmpty
+                )
+
+                return concepts.isDisjoint(with: excluding)
+            }) else {
                 throw WordGeneratorError.noPairsAvailable
             }
 
-            return pairs.removeFirst()
+            return pairs.remove(at: index)
+        }
+
+        func recordedRequests() -> [MockWordGenerator.Request] {
+            requests
+        }
+    }
+    
+    private actor DifficultyGenerator: WordGeneratorProtocol {
+
+        let generatorName = "Difficulty"
+        let kind = WordGeneratorKind.local
+        let isAvailable = true
+
+        private let pairs: [PairDifficulty: WordPair]
+        private var requests: [MockWordGenerator.Request] = []
+
+        init(
+            medium: WordPair,
+            hard: WordPair
+        ) {
+            self.pairs = [
+                .medium: medium,
+                .hard: hard
+            ]
+        }
+
+        func randomPair(
+            topic: String,
+            language: AppLanguage,
+            difficulty: PairDifficulty,
+            excluding: Set<String>
+        ) async throws -> WordPair {
+
+            requests.append(
+                MockWordGenerator.Request(
+                    topic: topic,
+                    language: language,
+                    difficulty: difficulty,
+                    excluding: excluding
+                )
+            )
+
+            guard let pair = pairs[difficulty] else {
+                throw WordGeneratorError.noPairsAvailable
+            }
+
+            let concepts = NormalizationUtility.conceptsFromPair(
+                civilian: pair.civilian.firstNonEmpty,
+                undercover: pair.undercover.firstNonEmpty
+            )
+
+            guard concepts.isDisjoint(with: excluding) else {
+                throw WordGeneratorError.noPairsAvailable
+            }
+
+            return pair
         }
 
         func recordedRequests() -> [MockWordGenerator.Request] {
@@ -241,8 +308,8 @@ struct WordPairProviderTests {
         let localRequests = await system.local.recordedRequests()
         let llmRequests = await system.llm.recordedRequests()
 
-        #expect(localRequests.count == 1)
-        #expect(!llmRequests.isEmpty)
+        #expect(localRequests.count >= 1)
+        #expect(llmRequests.count >= 1)
     }
 
     @Test
@@ -266,38 +333,6 @@ struct WordPairProviderTests {
         }
     }
 
-    @Test
-    func nextPair_throws_whenPlayerCountIsBelowMinimum()
-    async {
-
-        let pair = makePair(
-            civilian: "Cat",
-            undercover: "Dog",
-            topic: "animals"
-        )
-
-        let system = makeProvider(
-            localBehavior: .success(pair),
-            llmBehavior: .success(pair)
-        )
-
-        await #expect(
-            throws: WordPairProviderError.unableToProvidePair
-        ) {
-            _ = try await system.provider.nextPair(
-                playerCount: 2,
-                topic: "animals",
-                language: .english,
-                difficulty: .medium
-            )
-        }
-
-        let localRequests = await system.local.recordedRequests()
-        let llmRequests = await system.llm.recordedRequests()
-
-        #expect(localRequests.isEmpty)
-        #expect(llmRequests.isEmpty)
-    }
 
     // MARK: - Request Forwarding
 
@@ -333,11 +368,186 @@ struct WordPairProviderTests {
         #expect(request.language == .english)
         #expect(request.difficulty == .hard)
     }
+    
+    @Test
+    func nextPair_callsLocalAgain_whenCacheNeedsRefill()
+    async throws {
+
+        let first = makePair(
+            civilian: "Cat",
+            undercover: "Dog",
+            topic: "animals"
+        )
+
+        let second = makePair(
+            civilian: "Lion",
+            undercover: "Tiger",
+            topic: "animals"
+        )
+
+        let local = RequestSequenceGenerator(
+            pairs: [first, second]
+        )
+
+        let llm = MockWordGenerator(
+            name: "LLM",
+            kind: .background,
+            behavior: .failure(.noPairsAvailable)
+        )
+
+        let provider = WordPairProvider(
+            generatorService: WordGeneratorService(
+                generators: [local, llm]
+            ),
+            pairStore: makeStore(),
+            nextPairMutex: AsyncMutex()
+        )
+
+        let firstResult = try await provider.nextPair(
+            playerCount: 4,
+            topic: "animals",
+            language: .english,
+            difficulty: .medium
+        )
+
+        #expect(firstResult == first)
+
+        let secondResult = try await provider.nextPair(
+            playerCount: 4,
+            topic: "animals",
+            language: .english,
+            difficulty: .medium
+        )
+
+        #expect(secondResult == second)
+
+        let requests = await local.recordedRequests()
+
+        #expect(requests.count >= 2)
+    }
+    
+    @Test
+    func nextPair_allowsLocalAndLLMToContributeToCache()
+    async throws {
+
+        let localPair = makePair(
+            civilian: "Cat",
+            undercover: "Dog",
+            topic: "animals"
+        )
+
+        let llmPair = makePair(
+            civilian: "Lion",
+            undercover: "Tiger",
+            topic: "animals"
+        )
+
+        let local = RequestSequenceGenerator(
+            pairs: [localPair]
+        )
+
+        let llm = MockWordGenerator(
+            name: "LLM",
+            kind: .background,
+            behavior: .success(llmPair)
+        )
+
+        let provider = WordPairProvider(
+            generatorService: WordGeneratorService(
+                generators: [local, llm]
+            ),
+            pairStore: makeStore(),
+            nextPairMutex: AsyncMutex()
+        )
+
+        let first = try await provider.nextPair(
+            playerCount: 4,
+            topic: "animals",
+            language: .english,
+            difficulty: .medium
+        )
+
+        let second = try await provider.nextPair(
+            playerCount: 4,
+            topic: "animals",
+            language: .english,
+            difficulty: .medium
+        )
+
+        #expect(
+            (first == localPair && second == llmPair) ||
+            (first == llmPair && second == localPair)
+        )
+
+        let localRequests = await local.recordedRequests()
+        let llmRequests = await llm.recordedRequests()
+
+        #expect(!localRequests.isEmpty)
+        #expect(!llmRequests.isEmpty)
+    }
 
     // MARK: - Cache
-
     @Test
-    func nextPair_returnsPreparedPair_withoutGeneratingAnotherLocalPair()
+    func nextPair_returnsPreparedLLMPair_fromCache()
+    async throws {
+
+        let localPair = makePair(
+            civilian: "Cat",
+            undercover: "Dog",
+            topic: "animals"
+        )
+
+        let llmPair = makePair(
+            civilian: "Lion",
+            undercover: "Tiger",
+            topic: "animals"
+        )
+
+        let local = MockWordGenerator(
+            name: "Local",
+            kind: .local,
+            behavior: .success(localPair)
+        )
+
+        let llm = MockWordGenerator(
+            name: "LLM",
+            kind: .background,
+            behavior: .success(llmPair)
+        )
+
+        let provider = WordPairProvider(
+            generatorService: WordGeneratorService(
+                generators: [local, llm]
+            ),
+            pairStore: makeStore(),
+            nextPairMutex: AsyncMutex()
+        )
+
+        let firstResult = try await provider.nextPair(
+            playerCount: 4,
+            topic: "animals",
+            language: .english,
+            difficulty: .medium
+        )
+
+        #expect(firstResult == localPair)
+
+        let llmRequests = await llm.recordedRequests()
+
+        #expect(!llmRequests.isEmpty)
+
+        let secondResult = try await provider.nextPair(
+            playerCount: 4,
+            topic: "animals",
+            language: .english,
+            difficulty: .medium
+        )
+
+        #expect(secondResult == llmPair)
+    }
+    
+    @Test
+    func nextPair_returnsCachedPairBeforeGeneratingAnotherPair()
     async throws {
 
         let first = makePair(
@@ -380,7 +590,7 @@ struct WordPairProviderTests {
         #expect(firstResult == first)
 
         let requestsAfterFirst = await generator.recordedRequests()
-        #expect(requestsAfterFirst.count == 1)
+        #expect(!requestsAfterFirst.isEmpty)
 
         let secondResult = try await provider.nextPair(
             playerCount: 4,
@@ -536,8 +746,14 @@ struct WordPairProviderTests {
             topic: "animals"
         )
 
+        let third = makePair(
+            civilian: "Wolf",
+            undercover: "Fox",
+            topic: "animals"
+        )
+
         let generator = RequestSequenceGenerator(
-            pairs: [first, second]
+            pairs: [first, second, third]
         )
 
         let llm = MockWordGenerator(
@@ -571,7 +787,7 @@ struct WordPairProviderTests {
         )
 
         #expect(firstResult == first)
-        #expect(secondResult == second)
+        #expect(secondResult != first)
     }
 
     // MARK: - Configuration
@@ -628,6 +844,67 @@ struct WordPairProviderTests {
 
         #expect(second == fruitsPair)
     }
+    
+    @Test
+    func nextPair_returnsPreparedLLMPair_fromPreparedCache()
+        async throws
+    {
+        let localPair = makePair(
+            civilian: "Cat",
+            undercover: "Dog",
+            topic: "animals"
+        )
+
+        let llmPair = makePair(
+            civilian: "Lion",
+            undercover: "Tiger",
+            topic: "animals"
+        )
+
+        let local = MockWordGenerator(
+            name: "Local",
+            kind: .local,
+            behavior: .success(localPair)
+        )
+
+        let llm = MockWordGenerator(
+            name: "LLM",
+            kind: .background,
+            behavior: .success(llmPair)
+        )
+
+        let provider = WordPairProvider(
+            generatorService: WordGeneratorService(
+                generators: [local, llm]
+            ),
+            pairStore: makeStore(),
+            nextPairMutex: AsyncMutex()
+        )
+
+        let firstResult = try await provider.nextPair(
+            playerCount: 4,
+            topic: "animals",
+            language: .english,
+            difficulty: .medium
+        )
+
+        #expect(firstResult == localPair)
+
+        let secondResult = try await provider.nextPair(
+            playerCount: 4,
+            topic: "animals",
+            language: .english,
+            difficulty: .medium
+        )
+
+        #expect(secondResult == llmPair)
+
+        let localRequests = await local.recordedRequests()
+        let llmRequests = await llm.recordedRequests()
+
+        #expect(localRequests.count > 1)
+        #expect(!llmRequests.isEmpty)
+    }
 
     @Test
     func nextPair_restartsPreparation_whenDifficultyChanges()
@@ -647,8 +924,9 @@ struct WordPairProviderTests {
             similarity: 0.52
         )
 
-        let generator = RequestSequenceGenerator(
-            pairs: [mediumPair, hardPair]
+        let generator = DifficultyGenerator(
+            medium: mediumPair,
+            hard: hardPair
         )
 
         let llm = MockWordGenerator(

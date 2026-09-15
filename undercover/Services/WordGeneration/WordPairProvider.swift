@@ -4,17 +4,7 @@
 //
 //  Game-level word-pair cache.
 //
-//  Flow:
-//
-//  GAME START
-//      Local → 1 playable pair
-//      LLM   → background refill to 4
-//
-//  GAMEPLAY
-//      Cache first
-//      Cache <= 2 → LLM background refill
-//      Cache empty → wait for LLM
-//
+
 
 import Foundation
 
@@ -38,7 +28,7 @@ final class WordPairProvider {
     private var preparedWordPairs: [WordPair] = []
     private var preparedConfiguration: WordBatchConfiguration?
 
-    private var initialLocalTask: Task<Void, Never>?
+    private var localPreparationTask: Task<Void, Never>?
     private var llmPreparationTask: Task<Void, Never>?
 
     private var preparationID = UUID()
@@ -85,30 +75,39 @@ final class WordPairProvider {
             resetPreparation(for: configuration)
         }
 
-        // We already have something playable.
-        if !preparedWordPairs.isEmpty {
-            startLLMPreparationIfNeeded(
-                configuration: configuration,
-                preparationID: preparationID
-            )
+        prepareIfNeeded(
+            playerCount: playerCount,
+            topic: topic,
+            language: language,
+            difficulty: difficulty
+        )
+    }
+    
+    private func startLocalPreparationIfNeeded(
+        configuration: WordBatchConfiguration
+    ) {
+        guard preparedConfiguration == configuration else {
             return
         }
 
-        // Local generation is already running.
-        guard initialLocalTask == nil else {
+        guard preparedWordPairs.count < targetPreparedPairs else {
+            return
+        }
+
+        guard localPreparationTask == nil else {
             return
         }
 
         let currentPreparationID = preparationID
 
-        initialLocalTask = Task { @MainActor [weak self] in
+        localPreparationTask = Task { @MainActor [weak self] in
             guard let self else {
                 return
             }
 
             defer {
                 if self.preparationID == currentPreparationID {
-                    self.initialLocalTask = nil
+                    self.localPreparationTask = nil
                 }
             }
 
@@ -136,35 +135,23 @@ final class WordPairProvider {
                     configuration: configuration
                 )
 
-                guard inserted else {
-                    return
+                if inserted {
+                    print("✅ [Provider] Local pair added.")
+                    print(
+                        "📦 [Provider] Cache: " +
+                        "\(self.preparedWordPairs.count)/" +
+                        "\(self.targetPreparedPairs)"
+                    )
+                } else {
+                    print("⚠️ [Provider] Local pair rejected.")
                 }
 
-                print("✅ [Provider] Initial Local pair loaded.")
-                print(
-                    "📦 [Provider] Cache: " +
-                    "\(self.preparedWordPairs.count)/" +
-                    "\(self.targetPreparedPairs)"
-                )
-
-                // Start LLM only after Local produced a playable pair.
-                self.startLLMPreparationIfNeeded(
-                    configuration: configuration,
-                    preparationID: currentPreparationID
-                )
-
             } catch is CancellationError {
-                print("🛑 [Provider] Initial Local preparation cancelled.")
+                print("🛑 [Provider] Local preparation cancelled.")
 
             } catch {
                 print(
-                    "⚠️ [Provider] Initial Local generation failed: \(error)"
-                )
-
-                // Local failed → allow LLM to provide the first pair.
-                self.startLLMPreparationIfNeeded(
-                    configuration: configuration,
-                    preparationID: currentPreparationID
+                    "⚠️ [Provider] Local generation failed: \(error)"
                 )
             }
         }
@@ -266,8 +253,6 @@ final class WordPairProvider {
                     print(
                         "⚠️ [Provider] LLM preparation failed: \(error)"
                     )
-
-                    // Don't continuously hammer Foundation Models.
                     break
                 }
             }
@@ -362,6 +347,15 @@ final class WordPairProvider {
             resetPreparation(for: configuration)
         }
 
+        guard preparedWordPairs.count < targetPreparedPairs else {
+            return
+        }
+
+        // Both generators are allowed to refill concurrently.
+        startLocalPreparationIfNeeded(
+            configuration: configuration
+        )
+
         startLLMPreparationIfNeeded(
             configuration: configuration,
             preparationID: preparationID
@@ -396,15 +390,7 @@ final class WordPairProvider {
             difficulty: difficulty
         )
 
-        // Initial game start waits for Local.
-        if let localTask = initialLocalTask {
-            await localTask.value
-        }
-
-        // ---------------------------------------------------------
         // CACHE FIRST
-        // ---------------------------------------------------------
-
         if let pair = await consumeCachedPair(
             topic: topic,
             language: language,
@@ -420,12 +406,8 @@ final class WordPairProvider {
             return pair
         }
 
-        // ---------------------------------------------------------
-        // CACHE EMPTY
-        //
-        // Only NOW do we wait for LLM.
-        // ---------------------------------------------------------
-
+        // Cache is empty.
+        // Give both producers a chance.
         prepareIfNeeded(
             playerCount: playerCount,
             topic: topic,
@@ -433,11 +415,9 @@ final class WordPairProvider {
             difficulty: difficulty
         )
 
-        if let llmTask = llmPreparationTask {
-            await llmTask.value
-        }
+        // Wait for whichever preparation is currently running.
+        await waitForPreparation()
 
-        // LLM may have populated the cache.
         if let pair = await consumeCachedPair(
             topic: topic,
             language: language,
@@ -454,6 +434,14 @@ final class WordPairProvider {
         }
 
         throw WordPairProviderError.unableToProvidePair
+    }
+    
+    private func waitForPreparation() async {
+        let localTask = localPreparationTask
+        let llmTask = llmPreparationTask
+
+        await localTask?.value
+        await llmTask?.value
     }
 
     // MARK: - Cache Consumption
@@ -581,8 +569,8 @@ final class WordPairProvider {
     private func resetPreparation(
         for configuration: WordBatchConfiguration
     ) {
-        initialLocalTask?.cancel()
-        initialLocalTask = nil
+        localPreparationTask?.cancel()
+        localPreparationTask = nil
 
         llmPreparationTask?.cancel()
         llmPreparationTask = nil
@@ -594,8 +582,8 @@ final class WordPairProvider {
     }
 
     func reset() {
-        initialLocalTask?.cancel()
-        initialLocalTask = nil
+        localPreparationTask?.cancel()
+        localPreparationTask = nil
 
         llmPreparationTask?.cancel()
         llmPreparationTask = nil

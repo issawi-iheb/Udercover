@@ -13,92 +13,67 @@ public protocol TopicRepository: Sendable {
 
 public actor TopicService {
 
-    private let repository: any TopicRepository
-    private let aiProvider: (any TopicProvider)?
+    private let providers: [any TopicProvider]
     private var cachedTopics: [GameTopic] = []
 
     public init(
-        repository: any TopicRepository,
-        aiProvider: (any TopicProvider)? = nil
+        providers: [any TopicProvider]
     ) {
-        self.repository = repository
-        self.aiProvider = aiProvider
+        self.providers = providers
     }
 
-    public init(
-        aiProvider: (any TopicProvider)? = nil
-    ) {
-        self.repository = WordRepository()
-        self.aiProvider = aiProvider
-    }
-
-    /// Get all topics (cached after first fetch).
     public func topics() async -> [GameTopic] {
         if !cachedTopics.isEmpty {
             return cachedTopics
         }
 
-        // Local topics from repository
-        let localTopics = repository.topics.map { topic in
-            GameTopic(
-                id: normalizeForID(topic),
-                name: topic.capitalized,
-                source: .local
-            )
-        }
+        let allTopics = await withTaskGroup(
+            of: [GameTopic].self
+        ) { group in
 
-        // AI-generated topics (if provider available)
-        var aiTopics: [GameTopic] = []
-        if let provider = aiProvider {
-            let aiNames = await provider.topics()
-            aiTopics = aiNames.map { topic in
-                GameTopic(
-                    id: normalizeForID(topic),
-                    name: topic.capitalized,
-                    source: .ai
-                )
+            for provider in providers {
+                group.addTask {
+                    await provider.topics()
+                }
             }
+
+            var result: [GameTopic] = []
+
+            for await topics in group {
+                result.append(contentsOf: topics)
+            }
+
+            return result
         }
 
-        // Merge and deduplicate
-        let result = mergeTopics(localTopics, aiTopics)
+        cachedTopics = mergeTopics(allTopics)
 
         print("""
-        📚 [TopicService] Loaded \(result.count) topics
+        📚 [TopicService] Loaded \(cachedTopics.count) topics
+        📦 Local: \(cachedTopics.filter { $0.source == .local }.count)
+        🧠 AI: \(cachedTopics.filter { $0.source == .ai }.count)
         """)
 
-        cachedTopics = result
-        return result
+        return cachedTopics
     }
 
-    // MARK: - Private
-
     private func mergeTopics(
-        _ first: [GameTopic],
-        _ second: [GameTopic]
+        _ topics: [GameTopic]
     ) -> [GameTopic] {
 
         var result: [GameTopic] = []
         var seen = Set<String>()
 
-        for topic in first + second {
-            let id = topic.id
+        for topic in topics {
+            guard seen.insert(topic.id).inserted else {
+                continue
+            }
 
-            guard !seen.contains(id) else { continue }
-
-            seen.insert(id)
             result.append(topic)
         }
 
-        return result.sorted { $0.name < $1.name }
-    }
-
-    /// Normalize topic name to ID format (lowercase, dashes).
-    private func normalizeForID(_ value: String) -> String {
-        value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .folding(options: .diacriticInsensitive, locale: .current)
-            .replacingOccurrences(of: " ", with: "-")
+        return result.sorted {
+            $0.name < $1.name
+        }
     }
 }

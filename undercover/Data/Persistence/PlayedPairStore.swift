@@ -97,7 +97,7 @@ public actor PlayedPairStore {
 
             let configuration = ModelConfiguration(
                 schema: schema,
-                isStoredInMemoryOnly: false
+                isStoredInMemoryOnly: true
             )
 
             container = try ModelContainer(

@@ -15,12 +15,21 @@ public final class AppState: ObservableObject {
     @Published public private(set) var topics: [GameTopic] = []
     @Published public private(set) var isReady = false
 
-    private let topicService = TopicService()
+    private let topicService: TopicService
 
+    public init() {
+        topicService = TopicService(
+            providers: [
+                LocalTopicProvider(),
+                FoundationModelsTopicProvider()
+            ]
+        )
+    }
 
     public func bootstrap() async {
-
-        guard !isReady else { return }
+        guard !isReady else {
+            return
+        }
 
         topics = await topicService.topics()
 
