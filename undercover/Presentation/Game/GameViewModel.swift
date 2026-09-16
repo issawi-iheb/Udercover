@@ -9,8 +9,9 @@ import Combine
 @MainActor
 public final class GameViewModel: ObservableObject {
     
-    public init() {
+    public init(topics: [GameTopic] = []) {
         self.wordPairProvider = WordPairProvider()
+        self.availableTopics = topics
     }
 
     init(wordPairProvider: any WordPairProviding) {
@@ -135,6 +136,9 @@ public final class GameViewModel: ObservableObject {
         selectedTopic = topic
         resetAndPrepareWordPairs()
     }
+    public func setAvailableTopics(_ topics: [GameTopic]) {
+        availableTopics = topics
+    }
 
     public func selectDifficulty(_ difficulty: PairDifficulty) {
         selectedDifficulty = difficulty
@@ -215,7 +219,28 @@ public final class GameViewModel: ObservableObject {
 
         syncState()
 
-        let topic = selectedTopic ?? "anime_extra"
+        let topic: String
+
+        if let selectedTopic {
+            topic = selectedTopic
+        } else {
+            let localTopics = availableTopics.filter { $0.source == .local }
+
+            print("🎲 availableTopics: \(availableTopics.count)")
+            print("🎲 localTopics: \(localTopics.map { "\($0.id) [\($0.source)]" })")
+
+            guard let randomTopic = localTopics.randomElement()
+                    ?? availableTopics.randomElement()
+            else {
+                isGeneratingWords = false
+                wordGeneratorError = "No topics available"
+                return
+            }
+
+            print("🎲 Selected random topic: \(randomTopic.id) [\(randomTopic.source)]")
+
+            topic = randomTopic.id
+        }
 
         do {
             let pair = try await wordPairProvider.nextPair(

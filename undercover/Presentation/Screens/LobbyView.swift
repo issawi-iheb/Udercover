@@ -15,6 +15,9 @@ public struct LobbyView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var canStart: Bool { viewModel.players.count >= 3 }
+    private var strings: AppStrings {
+        viewModel.selectedLanguage.strings
+    }
 
     public var body: some View {
         ZStack {
@@ -29,7 +32,8 @@ public struct LobbyView: View {
                     header
                     difficultySection
                     topicSection
-                    mrWhiteToggle
+                    languageSection
+                    mrWhiteSection
                     playerSection
                     addPlayerField
                     startSection
@@ -65,9 +69,9 @@ public struct LobbyView: View {
 
     private var header: some View {
         VStack(spacing: 6) {
-            Text("LOBBY")
+            Text(strings.lobby)
                 .font(AppFont.label()).foregroundStyle(Color.brandPurple).tracking(4)
-            Text("Set up your game")
+            Text(strings.setUpYourGame)
                 .font(.system(size: 28, weight: .black, design: .rounded)).foregroundStyle(.white)
         }
         .frame(maxWidth: .infinity, alignment: .center)
@@ -80,13 +84,13 @@ public struct LobbyView: View {
 
     private var difficultySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionLabel("DIFFICULTY")
+            sectionLabel(strings.difficulty)
 
             HStack(spacing: 10) {
                 ForEach(PairDifficulty.allCases, id: \.self) { diff in
                     DifficultyButton(
                         difficulty: diff,
-                        isSelected: viewModel.selectedDifficulty == diff,
+                        isSelected: viewModel.selectedDifficulty == diff, strings: strings,
                         action: {
                             Haptic.light()
                             withAnimation(.appSnap) {
@@ -107,9 +111,9 @@ public struct LobbyView: View {
     private var topicSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                sectionLabel("TOPIC")
+                sectionLabel(strings.topic)
                 Spacer()
-                Text(viewModel.selectedTopic?.capitalized ?? "Random")
+                Text(viewModel.selectedTopic?.capitalized ?? strings.random)
                     .font(AppFont.label(size: 10))
                     .foregroundStyle(Color.brandPurple)
                     .tracking(1)
@@ -117,7 +121,7 @@ public struct LobbyView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    TopicPill(label: "Random", icon: "shuffle",
+                    TopicPill(label: strings.random, icon: "shuffle",
                               isSelected: viewModel.selectedTopic == nil) {
                         Haptic.light()
                         withAnimation(.appSnap) {
@@ -147,63 +151,89 @@ public struct LobbyView: View {
     }
 
     // MARK: - Language + Mr. White
-
-    private var mrWhiteToggle: some View {
-        VStack(spacing: 10) {
-            // Language row
+    @ViewBuilder
+    private var mrWhiteSection: some View {
+        if viewModel.players.count >= 4 {
             HStack {
-                Image(systemName: "globe")
-                    .font(.system(size: 14)).foregroundStyle(Color.brandPurple).frame(width: 28)
-                Text("Language")
-                    .font(AppFont.body(size: 15, weight: .medium)).foregroundStyle(.white)
-                Spacer()
-                Picker(
-                    "",
-                    selection: Binding(
-                        get: { viewModel.selectedLanguage },
-                        set: { viewModel.selectLanguage($0) }
-                    )
-                ) {
-                    ForEach(AppLanguage.allCases, id: \.self) {
-                        Text($0.displayName).tag($0)
-                    }
-                }
-                .pickerStyle(.menu).tint(.brandPurple)
-            }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .glassCard()
+                ZStack {
+                    Circle()
+                        .fill(Color.brandPink.opacity(0.15))
+                        .frame(width: 32, height: 32)
 
-            // Mr. White toggle (only if 4+ players)
-            if viewModel.players.count >= 4 {
-                HStack {
-                    ZStack {
-                        Circle().fill(Color.brandPink.opacity(0.15)).frame(width: 32, height: 32)
-                        Text("🃏").font(.system(size: 16))
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Mr. White")
-                            .font(AppFont.body(size: 15, weight: .semibold)).foregroundStyle(.white)
-                        Text("One player gets no word and must bluff")
-                            .font(AppFont.body(size: 11)).foregroundStyle(Color.white.opacity(0.4))
-                    }
-                    Spacer()
-                    Toggle("", isOn: $viewModel.mrWhiteModeEnabled).tint(.brandPink)
+                    Text("🃏")
+                        .font(.system(size: 16))
                 }
-                .padding(.horizontal, 16).padding(.vertical, 12)
-                .glassCard()
-                .transition(.move(edge: .top).combined(with: .opacity))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(strings.mrWhite)
+                        .font(AppFont.body(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+
+                    Text(strings.mrWhiteDescription)
+                        .font(AppFont.body(size: 11))
+                        .foregroundStyle(Color.white.opacity(0.4))
+                }
+
+                Spacer()
+
+                Toggle(
+                    "",
+                    isOn: $viewModel.mrWhiteModeEnabled
+                )
+                .tint(.brandPink)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .glassCard()
+            .transition(
+                .move(edge: .top)
+                    .combined(with: .opacity)
+            )
+        }
+    }
+    
+    private var languageSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                sectionLabel(strings.languageSection)
+
+                Spacer()
+
+                Text(viewModel.selectedLanguage.displayName)
+                    .font(AppFont.label(size: 10))
+                    .foregroundStyle(Color.brandPurple)
+                    .tracking(1)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(AppLanguage.allCases, id: \.self) { language in
+                        LanguagePill(
+                            language: language,
+                            isSelected: viewModel.selectedLanguage == language
+                        ) {
+                            Haptic.light()
+
+                            withAnimation(.appSnap) {
+                                viewModel.selectLanguage(language)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+                .padding(.vertical, 4)
             }
         }
-        .opacity(appeared ? 1 : 0).offset(y: appeared ? 0 : 16)
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 16)
         .animation(.appDramatic.delay(0.22), value: appeared)
     }
-
     // MARK: - Player card stack
 
     private var playerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                sectionLabel("PLAYERS")
+                sectionLabel(strings.players)
                 Spacer()
                 Text("\(viewModel.players.count) / 10")
                     .font(AppFont.label(size: 11)).foregroundStyle(Color.white.opacity(0.35))
@@ -213,7 +243,7 @@ public struct LobbyView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "person.3.fill")
                         .font(.system(size: 28)).foregroundStyle(Color.brandPurple.opacity(0.4))
-                    Text("Add at least 3 players to start")
+                    Text(strings.addAtLeastThreePlayers)
                         .font(AppFont.body(size: 14)).foregroundStyle(Color.white.opacity(0.35))
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 32)
@@ -247,7 +277,7 @@ public struct LobbyView: View {
                     .font(.system(size: 16)).foregroundStyle(Color.brandPurple)
                     .padding(.leading, 4)
 
-                TextField("Player name…", text: $playerName)
+                TextField(strings.playerNamePlaceholder, text: $playerName)
                     .font(AppFont.body(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
                     .autocorrectionDisabled()
@@ -291,11 +321,11 @@ public struct LobbyView: View {
                     if viewModel.isGeneratingWords {
                         HStack(spacing: 12) {
                             ProgressView().tint(.white)
-                            Text("Finding words…").font(AppFont.button())
+                            Text(strings.findingWords).font(AppFont.button())
                         }
                     } else {
                         HStack(spacing: 14) {
-                            Text("START GAME")
+                            Text(strings.startGame)
                                 .font(AppFont.button(size: 18)).tracking(2)
                             Image(systemName: "arrow.right.circle.fill")
                                 .font(.system(size: 20))
@@ -317,7 +347,9 @@ public struct LobbyView: View {
             .animation(.appSnap, value: canStart)
 
             if !canStart {
-                Text("Need \(max(0, 3 - viewModel.players.count)) more player\(3 - viewModel.players.count == 1 ? "" : "s")")
+                Text(strings.needMorePlayers(
+                    max(0, 3 - viewModel.players.count)
+                ))
                     .font(AppFont.label(size: 11))
                     .foregroundStyle(Color.white.opacity(0.25))
                     .tracking(1)
@@ -354,6 +386,21 @@ public struct LobbyView: View {
         ]
         return map[topic] ?? "square.grid.2x2.fill"
     }
+    
+    private func languageIcon(_ language: AppLanguage) -> String {
+        switch language {
+        case .english:
+            return "character"
+        case .french:
+            return "character"
+        case .arabic:
+            return "character"
+        case .spanish:
+            return "character"
+        case .tunisian:
+            return "character"
+        }
+    }
 }
 
 // MARK: ─── DifficultyButton ───────────────────────────────────────────────────
@@ -361,28 +408,42 @@ public struct LobbyView: View {
 private struct DifficultyButton: View {
     let difficulty: PairDifficulty
     let isSelected: Bool
-    let action:     () -> Void
+    let strings: AppStrings
+    let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 6) {
-                Text(difficulty.emoji).font(.system(size: 22))
-                Text(difficulty.label)
-                    .font(AppFont.label(size: 11)).tracking(1)
-                    .foregroundStyle(isSelected ? difficulty.color : Color.white.opacity(0.4))
+                Text(difficulty.emoji)
+                    .font(.system(size: 22))
+
+                Text(strings.difficultyLabel(difficulty))
+                    .font(AppFont.label(size: 11))
+                    .tracking(1)
+                    .foregroundStyle(
+                        isSelected
+                            ? difficulty.color
+                            : Color.white.opacity(0.4)
+                    )
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 14)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
             .background(
                 isSelected
                     ? difficulty.color.opacity(0.15)
                     : Color.white.opacity(0.04)
             )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-            .overlay(RoundedRectangle(cornerRadius: Radius.md)
-                .strokeBorder(
-                    isSelected ? difficulty.color.opacity(0.6) : Color.appBorder,
-                    lineWidth: isSelected ? 1.5 : 1
-                )
+            .clipShape(
+                RoundedRectangle(cornerRadius: Radius.md)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md)
+                    .strokeBorder(
+                        isSelected
+                            ? difficulty.color.opacity(0.6)
+                            : Color.appBorder,
+                        lineWidth: isSelected ? 1.5 : 1
+                    )
             )
             .scaleEffect(isSelected ? 1.03 : 1.0)
             .animation(.appSnap, value: isSelected)
@@ -418,6 +479,59 @@ private struct TopicPill: View {
             .animation(.appSnap, value: isSelected)
         }
         .buttonStyle(.plain)
+    }
+}
+// MARK: ─── LanguagePill ─────────────────────────────────────────────────────────
+
+private struct LanguagePill: View {
+    let language: AppLanguage
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(flag)
+                    .font(.system(size: 16))
+
+                Text(language.displayName)
+                    .font(AppFont.label(size: 10))
+                    .tracking(0.5)
+                    .foregroundStyle(
+                        isSelected
+                            ? Color.white
+                            : Color.white.opacity(0.45)
+                    )
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(
+                isSelected
+                    ? Color.brandPurple.opacity(0.22)
+                    : Color.white.opacity(0.05)
+            )
+            .overlay {
+                Capsule()
+                    .stroke(
+                        isSelected
+                            ? Color.brandPurple.opacity(0.7)
+                            : Color.white.opacity(0.08),
+                        lineWidth: 1
+                    )
+            }
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var flag: String {
+        switch language {
+        case .english: "🇬🇧"
+        case .french: "🇫🇷"
+        case .arabic: "🇸🇦"
+        case .spanish: "🇪🇸"
+        case .tunisian: "🇹🇳"
+        }
     }
 }
 

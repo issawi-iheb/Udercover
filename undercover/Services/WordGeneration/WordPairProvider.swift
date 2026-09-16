@@ -389,6 +389,8 @@ final class WordPairProvider {
             language: language,
             difficulty: difficulty
         )
+        
+        await localPreparationTask?.value
 
         // CACHE FIRST
         if let pair = await consumeCachedPair(

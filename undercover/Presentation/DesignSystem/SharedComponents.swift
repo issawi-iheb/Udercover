@@ -62,6 +62,7 @@ struct RoundBadge: View {
 // MARK: ─── DifficultyBadge ───────────────────────────────────────────────────
 
 struct DifficultyBadge: View {
+    
     let difficulty: PairDifficulty
 
     var body: some View {
