@@ -10,6 +10,9 @@ import SwiftUI
 public struct GameRootView: View {
     @ObservedObject public var viewModel: GameViewModel
     @Environment(\.dismiss) private var dismiss
+    private var strings: AppStrings {
+        viewModel.selectedLanguage.strings
+    }
 
     public var body: some View {
         ZStack {
@@ -19,7 +22,9 @@ public struct GameRootView: View {
                 switch viewModel.gameState {
 
                 case .setup, .loadingWords:
-                    loadingScreen
+                        LoadingView(
+                            title: strings.findingWords
+                        )
                         .transition(.opacity)
 
                 case .reveal:
@@ -65,22 +70,6 @@ public struct GameRootView: View {
                 }
             }
             .animation(.appSpring, value: viewModel.gameState)
-        }
-    }
-
-    // MARK: - Loading screen
-
-    private var loadingScreen: some View {
-        VStack(spacing: Space.lg) {
-            ZStack {
-                PulsingRing(color: .brandPurple, size: 80)
-                ProgressView()
-                    .scaleEffect(1.4)
-                    .tint(Color.brandPurple)
-            }
-            Text("Finding words…")
-                .font(AppFont.body(size: 15, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.45))
         }
     }
 }

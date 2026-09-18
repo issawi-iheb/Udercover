@@ -31,21 +31,14 @@ public struct HomeView: View {
                     // Identity block
                     VStack(spacing: 24) {
                         // Logo icon
-                        ZStack {
-                            // Outer ring
-                            Circle()
-                                .strokeBorder(Color.brandPurple.opacity(0.25), lineWidth: 1)
-                                .frame(width: 130, height: 130)
-                            // Inner fill
-                            Circle()
-                                .fill(LinearGradient(
-                                    colors: [Color.brandPurple.opacity(0.18), Color.brandPink.opacity(0.10)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                ))
-                                .frame(width: 112, height: 112)
-                            Text("🕵️")
-                                .font(.system(size: 62))
-                        }
+                        MrWhiteDrawing()
+                            .frame(width: 190, height: 190)
+                            .scaleEffect(appeared ? 1 : 0.85)
+                            .opacity(appeared ? 1 : 0)
+                            .animation(
+                                .spring(response: 0.7, dampingFraction: 0.58).delay(0.1),
+                                value: appeared
+                            )
                         .scaleEffect(appeared ? 1 : 0.65)
                         .opacity(appeared ? 1 : 0)
                         .animation(.spring(response: 0.7, dampingFraction: 0.58).delay(0.1), value: appeared)
@@ -89,7 +82,7 @@ public struct HomeView: View {
                             .padding(.vertical, 20)
                             .background(LinearGradient.brandGlow)
                             .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
-                            .glow(color: .brandPurple, radius: 20)
+                            .glow(color: .brandPurple, radius: 10)
                         }
                         .buttonStyle(PartyButtonStyle(gradient: .brandGlow, glowColor: .brandPurple, disabled: false))
 

@@ -11,7 +11,7 @@ public struct LobbyView: View {
     @State private var playerName  = ""
     @State private var appeared    = false
     @State private var showGame    = false
-    @State private var nameFocused = false
+    @FocusState private var nameFocused: Bool
     @Environment(\.dismiss) private var dismiss
 
     private var canStart: Bool { viewModel.players.count >= 3 }
@@ -28,7 +28,7 @@ public struct LobbyView: View {
                 .offset(x: -100, y: -280).allowsHitTesting(false)
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: Space.xl) {
+                VStack(spacing: Space.lg) {
                     header
                     difficultySection
                     topicSection
@@ -42,6 +42,7 @@ public struct LobbyView: View {
                 .padding(.top, Space.md)
                 .padding(.bottom, 48)
             }
+            .scrollDismissesKeyboard(.interactively)
         }
         .navigationBarBackButtonHidden(true)
         .toolbar {
@@ -52,14 +53,15 @@ public struct LobbyView: View {
                 }
             }
         }
-        .onAppear { withAnimation(.appDramatic) {
-            appeared = true
+        .onAppear {
             viewModel.availableTopics = appState.topics
+            withAnimation(.appDramatic) {
+            appeared = true
         }
     }
         .fullScreenCover(isPresented: $showGame) { GameRootView(viewModel: viewModel) }
         .onChange(of: viewModel.gameState) { _, new in
-            if new != .setup && new != .loadingWords { showGame = true }
+            if new != .setup  { showGame = true }
         }
         .environment(\.layoutDirection, viewModel.selectedLanguage.layoutDirection)
     }
@@ -154,37 +156,87 @@ public struct LobbyView: View {
     @ViewBuilder
     private var mrWhiteSection: some View {
         if viewModel.players.count >= 4 {
-            HStack {
+            HStack(spacing: 14) {
                 ZStack {
-                    Circle()
-                        .fill(Color.brandPink.opacity(0.15))
-                        .frame(width: 32, height: 32)
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.brandPink.opacity(0.20),
+                                    Color.brandPurple.opacity(0.12)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 46, height: 46)
 
-                    Text("🃏")
-                        .font(.system(size: 16))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(
+                                    Color.white.opacity(0.10),
+                                    lineWidth: 1
+                                )
+                        }
+
+                    Image(systemName: "suit.club.fill")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(Color.brandPink)
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(strings.mrWhite)
-                        .font(AppFont.body(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 7) {
+                        Text(strings.mrWhite)
+                            .font(AppFont.body(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+
+                        Text("OPTIONAL")
+                            .font(AppFont.label(size: 8))
+                            .tracking(1)
+                            .foregroundStyle(Color.brandPink.opacity(0.75))
+                    }
 
                     Text(strings.mrWhiteDescription)
                         .font(AppFont.body(size: 11))
-                        .foregroundStyle(Color.white.opacity(0.4))
+                        .foregroundStyle(Color.white.opacity(0.38))
+                        .lineLimit(2)
                 }
 
-                Spacer()
+                Spacer(minLength: 4)
 
-                Toggle(
-                    "",
-                    isOn: $viewModel.mrWhiteModeEnabled
-                )
-                .tint(.brandPink)
+                Toggle("", isOn: $viewModel.mrWhiteModeEnabled)
+                    .labelsHidden()
+                    .tint(.brandPink)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .glassCard()
+            .padding(14)
+            .background {
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.brandPink.opacity(0.055),
+                                Color.white.opacity(0.035)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(
+                        Color.brandPink.opacity(
+                            viewModel.mrWhiteModeEnabled ? 0.25 : 0.08
+                        ),
+                        lineWidth: 1
+                    )
+            }
+            .shadow(
+                color: Color.black.opacity(0.15),
+                radius: 12,
+                y: 6
+            )
+            .animation(.easeOut(duration: 0.2), value: viewModel.mrWhiteModeEnabled)
             .transition(
                 .move(edge: .top)
                     .combined(with: .opacity)
@@ -229,84 +281,153 @@ public struct LobbyView: View {
         .animation(.appDramatic.delay(0.22), value: appeared)
     }
     // MARK: - Player card stack
-
     private var playerSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 sectionLabel(strings.players)
                 Spacer()
                 Text("\(viewModel.players.count) / 10")
-                    .font(AppFont.label(size: 11)).foregroundStyle(Color.white.opacity(0.35))
+                    .font(AppFont.label(size: 11))
+                    .foregroundStyle(Color.white.opacity(0.35))
             }
 
-            if viewModel.players.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "person.3.fill")
-                        .font(.system(size: 28)).foregroundStyle(Color.brandPurple.opacity(0.4))
-                    Text(strings.addAtLeastThreePlayers)
-                        .font(AppFont.body(size: 14)).foregroundStyle(Color.white.opacity(0.35))
-                }
-                .frame(maxWidth: .infinity).padding(.vertical, 32)
-                .glassCard()
-            } else {
-                VStack(spacing: 1) {
-                    ForEach(Array(viewModel.players.enumerated()), id: \.element.id) { idx, player in
-                        PlayerCard(player: player, index: idx) {
-                            withAnimation(.appSnap) {
-                                viewModel.removePlayer(at: IndexSet(integer: idx))
-                            }
-                        }
-                        if idx < viewModel.players.count - 1 {
-                            Divider().background(Color.appBorder).padding(.leading, 60)
+            if !viewModel.players.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(
+                            Array(viewModel.players.enumerated()),
+                            id: \.element.id
+                        ) { index, player in
+                            lobbyPlayerBadge(
+                                player: player,
+                                index: index
+                            )
+                            
+                            
                         }
                     }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 6)
                 }
-                .glassCard()
             }
         }
-        .opacity(appeared ? 1 : 0).offset(y: appeared ? 0 : 16)
-        .animation(.appDramatic.delay(0.26), value: appeared)
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 16)
+        .animation(
+            .appDramatic.delay(0.26),
+            value: appeared
+        )
     }
+    
+    private func lobbyPlayerBadge(
+        player: Player,
+        index: Int
+    ) -> some View {
+        let accent = Color.avatar(for: index)
+
+        return VStack(spacing: 5) {
+            ZStack(alignment: .topTrailing) {
+                Circle()
+                    .fill(accent.opacity(0.2))
+                    .frame(width: 52, height: 52)
+                    .overlay {
+                        Circle()
+                            .strokeBorder(
+                                accent.opacity(0.4),
+                                lineWidth: 1
+                            )
+                    }
+                    .overlay {
+                        Text(
+                            String(
+                                player.name
+                                    .prefix(1)
+                                    .uppercased()
+                            )
+                        )
+                        .font(AppFont.playerName(size: 17))
+                        .foregroundStyle(accent)
+                    }
+
+                Button {
+                    withAnimation(.appSnap) {
+                        viewModel.removePlayer(
+                            at: IndexSet(integer: index)
+                        )
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Color.red)
+                }
+                .buttonStyle(.plain)
+                .offset(x: 5, y: -5)
+            }
+
+            Text(player.name)
+                .font(AppFont.body(size: 9, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.55))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: 60)
+        }
+    }
+    
 
     // MARK: - Add player field
-
+    
     private var addPlayerField: some View {
-        HStack(spacing: 12) {
-            HStack {
-                Image(systemName: "person.badge.plus")
-                    .font(.system(size: 16)).foregroundStyle(Color.brandPurple)
-                    .padding(.leading, 4)
+        HStack(spacing: 10) {
+            Image(systemName: "person.badge.plus")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.brandPurple)
+                .frame(width: 22)
 
-                TextField(strings.playerNamePlaceholder, text: $playerName)
-                    .font(AppFont.body(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.words)
-                    .onSubmit { addPlayer() }
-            }
-            .padding(.vertical, 14).padding(.horizontal, 12)
-            .background(Color.white.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-            .overlay(RoundedRectangle(cornerRadius: Radius.md)
-                .strokeBorder(Color.appBorder, lineWidth: 1))
+            TextField(strings.playerNamePlaceholder, text: $playerName)
+                .focused($nameFocused)
+                .font(AppFont.body(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.words)
+                .onSubmit { addPlayer() }
 
             Button(action: addPlayer) {
-                ZStack {
-                    Circle()
-                        .foregroundStyle(
-                            playerName.trimmingCharacters(in: .whitespaces).isEmpty
-                                ? LinearGradient(colors: [.white.opacity(0.06), .white.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                : LinearGradient.brandGlow
-                        )
-                        .frame(width: 48, height: 48)
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
-                }
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background {
+                        Circle()
+                            .fill(
+                                playerName.trimmingCharacters(in: .whitespaces).isEmpty
+                                    ? AnyShapeStyle(Color.white.opacity(0.07))
+                                    : AnyShapeStyle(LinearGradient.brandGlow)
+                            )
+                    }
             }
+            .buttonStyle(.plain)
             .disabled(playerName.trimmingCharacters(in: .whitespaces).isEmpty)
+            .opacity(
+                playerName.trimmingCharacters(in: .whitespaces).isEmpty ? 0.45 : 1
+            )
+            .animation(.easeOut(duration: 0.2), value: playerName)
         }
-        .opacity(appeared ? 1 : 0).animation(.appDramatic.delay(0.30), value: appeared)
+        .padding(.leading, 14)
+        .padding(.trailing, 7)
+        .frame(height: 54)
+        .background {
+            RoundedRectangle(cornerRadius: Radius.md)
+                .fill(Color.white.opacity(0.055))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: Radius.md)
+                .strokeBorder(
+                    Color.white.opacity(0.10),
+                    lineWidth: 1
+                )
+        }
+        .opacity(appeared ? 1 : 0)
+        .animation(.appDramatic.delay(0.30), value: appeared)
     }
 
     // MARK: - Start button
@@ -317,20 +438,11 @@ public struct LobbyView: View {
                 Haptic.heavy()
                 Task { await viewModel.startGame() }
             } label: {
-                ZStack {
-                    if viewModel.isGeneratingWords {
-                        HStack(spacing: 12) {
-                            ProgressView().tint(.white)
-                            Text(strings.findingWords).font(AppFont.button())
-                        }
-                    } else {
-                        HStack(spacing: 14) {
-                            Text(strings.startGame)
-                                .font(AppFont.button(size: 18)).tracking(2)
-                            Image(systemName: "arrow.right.circle.fill")
-                                .font(.system(size: 20))
-                        }
-                    }
+                HStack(spacing: 14) {
+                    Text(strings.startGame)
+                        .font(AppFont.button(size: 18)).tracking(2)
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.system(size: 20))
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity).padding(.vertical, 20)
@@ -341,7 +453,7 @@ public struct LobbyView: View {
                                          startPoint: .leading, endPoint: .trailing)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
-                .glow(color: canStart ? .brandPurple : .clear, radius: 18)
+                .glow(color: canStart ? .brandPurple : .clear, radius: 10)
             }
             .disabled(!canStart || viewModel.isGeneratingWords)
             .animation(.appSnap, value: canStart)
@@ -368,6 +480,7 @@ public struct LobbyView: View {
             viewModel.addPlayer(name: trimmed)
         }
         playerName = ""
+        nameFocused = false
     }
 
     private func sectionLabel(_ text: String) -> some View {
@@ -385,21 +498,6 @@ public struct LobbyView: View {
             "household":"house.fill","weather":"cloud.sun.fill",
         ]
         return map[topic] ?? "square.grid.2x2.fill"
-    }
-    
-    private func languageIcon(_ language: AppLanguage) -> String {
-        switch language {
-        case .english:
-            return "character"
-        case .french:
-            return "character"
-        case .arabic:
-            return "character"
-        case .spanish:
-            return "character"
-        case .tunisian:
-            return "character"
-        }
     }
 }
 
@@ -467,7 +565,7 @@ private struct TopicPill: View {
                 Text(label).font(AppFont.body(size: 13, weight: .semibold))
             }
             .foregroundStyle(isSelected ? .white : Color.white.opacity(0.5))
-            .padding(.horizontal, 14).padding(.vertical, 8)
+            .padding(.horizontal, 14).padding(.vertical, 10)
             .background(isSelected ? LinearGradient.brandGlow : LinearGradient(
                 colors: [Color.white.opacity(0.06)], startPoint: .leading, endPoint: .trailing
             ))
@@ -503,7 +601,7 @@ private struct LanguagePill: View {
                             : Color.white.opacity(0.45)
                     )
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .padding(.vertical, 9)
             .background(
                 isSelected
@@ -532,46 +630,5 @@ private struct LanguagePill: View {
         case .spanish: "🇪🇸"
         case .tunisian: "🇹🇳"
         }
-    }
-}
-
-// MARK: ─── PlayerCard ─────────────────────────────────────────────────────────
-
-private struct PlayerCard: View {
-    let player: Player
-    let index:  Int
-    let onRemove: () -> Void
-
-    private var accent: Color { .avatar(for: index) }
-
-    var body: some View {
-        HStack(spacing: 14) {
-            // Avatar
-            ZStack {
-                Circle().fill(accent.opacity(0.2)).frame(width: 40, height: 40)
-                    .overlay(Circle().strokeBorder(accent.opacity(0.4), lineWidth: 1))
-                Text(String(player.name.prefix(1)).uppercased())
-                    .font(AppFont.playerName(size: 17)).foregroundStyle(accent)
-            }
-
-            Text(player.name)
-                .font(AppFont.body(size: 16, weight: .semibold)).foregroundStyle(.white)
-
-            Spacer()
-
-            // Remove button
-            Button(action: onRemove) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 18))
-                    .foregroundStyle(Color.white.opacity(0.2))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, Space.md).padding(.vertical, 12)
-        .background(Color.white.opacity(0.02))
-        .transition(.asymmetric(
-            insertion: .move(edge: .trailing).combined(with: .opacity),
-            removal:   .move(edge: .leading).combined(with: .opacity)
-        ))
     }
 }

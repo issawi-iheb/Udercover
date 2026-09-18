@@ -15,21 +15,12 @@ struct undercoverApp: App {
     var body: some Scene {
 
         WindowGroup {
-
             Group {
-
                 if appState.isReady {
-
-                    NavigationStack {
-                        HomeView()
-                    }
-
+                    HomeView()
                 } else {
-
-                    LoadingView()
-
+                    LoadingView(title: "PREPARING GAME", subtitle: "Getting everything ready...")
                 }
-
             }
             .environmentObject(appState)
             .task {
