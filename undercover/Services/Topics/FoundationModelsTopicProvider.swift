@@ -16,12 +16,12 @@ public actor FoundationModelsTopicProvider: TopicProvider {
     public init() {}
 
     private var cachedTopics: [GameTopic]?
+    public nonisolated let source: TopicSource = .ai
 
     // MARK: - Public API
 
     public func topics() async -> [GameTopic] {
 
-        // Return cached topics if already generated.
         if let cachedTopics, !cachedTopics.isEmpty {
             return cachedTopics
         }
@@ -36,7 +36,10 @@ public actor FoundationModelsTopicProvider: TopicProvider {
 
             do {
                 let response = try await session.respond(
-                    to: "Generate 20 distinct, high-quality topics for Undercover."
+                    to: """
+                    Generate 20 distinct, high-quality topic categories for
+                    the party game Undercover.
+                    """
                 )
 
                 let json = Self.cleanJSON(response.content)
@@ -56,14 +59,20 @@ public actor FoundationModelsTopicProvider: TopicProvider {
                             in: .whitespacesAndNewlines
                         )
                     }
-                    .filter { !$0.isEmpty }
+                    .filter {
+                        !$0.isEmpty
+                    }
+
                 print("""
                 🧠 [FoundationModelsTopicProvider]
                 Generated topics:
                 \(cleanedTopics.enumerated()
-                    .map { "\($0.offset + 1). \($0.element)" }
+                    .map {
+                        "\($0.offset + 1). \($0.element)"
+                    }
                     .joined(separator: "\n"))
                 """)
+
                 guard cleanedTopics.count == 20 else {
                     print("""
                     ⚠️ [FoundationModelsTopicProvider]
@@ -72,14 +81,15 @@ public actor FoundationModelsTopicProvider: TopicProvider {
 
                     return Self.fallbackGameTopics()
                 }
-                
+
                 let topics = cleanedTopics.map { topic in
                     GameTopic(
                         id: Self.normalizeForID(topic),
-                        name: topic.capitalized,
+                        name: topic,
                         source: .ai
                     )
                 }
+
                 self.cachedTopics = topics
 
                 return topics
@@ -102,64 +112,290 @@ public actor FoundationModelsTopicProvider: TopicProvider {
     // MARK: - System Prompt
 
     private nonisolated static let systemPrompt = """
-    You generate topics for the party game "Undercover".
+    You generate topic categories for the party game "Undercover".
 
-    A good topic is a recognizable universe that contains many possible concepts for ambiguous word pairs.
+    UNDERCOVER MECHANIC
 
-    RULES:
-    1. Generate exactly 20 distinct topics.
-    2. Each topic must represent a completely different domain.
-    3. Never use generic prefixes like "Famous", "Top", or "Popular".
-    4. Avoid overlapping or near-identical topics (e.g., do not generate both "Fast Food" and "Fast Food Chains").
-
-    GOOD TOPIC TYPES:
-    - Media: Anime, Movies, Video Games, Superheroes, Sitcoms
-    - People: Football Players, Pop Stars, Historical Figures
-    - Items: Fast Food, Car Brands, Board Games, Tropical Fruits
-    - Geography: Countries, European Cities, Landmarks
-
-    AVOID:
-    - Abstract topics: Science, Culture, Psychology, Philosophy
-    - Very broad topics: Things, Objects, Concepts
-    - Multiple variations of the same universe.
-    - Avoid starting topic names with generic prefixes like "Famous" or "Top".
-    Instead of "Famous Cars", use "Cars" or "Sports Cars".
-    Instead of "Famous Anime Characters", use "Anime Characters".
-
-    BAD:
-    Football
-    Football Players
-    Football Clubs
-    Football Managers
-
-    GOOD:
-    Football Players
-    Anime
-    Car Brands
-    European Cities
-    Fast Food
-
-    OUTPUT:
-    Return ONLY a JSON array of exactly 20 strings.
+    Players receive secret words that are related but different.
 
     Example:
+
+    Topic: Fruits
+    Civilian: Apple
+    Undercover: Pear
+
+    The topic itself is NOT the pair.
+
+    The topic defines a large universe from which the game can later
+    generate many recognizable concepts and ambiguous word pairs.
+
+    Your job is to generate exactly 20 excellent topic categories.
+
+    ────────────────────────────────────────
+    WHAT MAKES A GOOD TOPIC
+    ────────────────────────────────────────
+
+    A good topic:
+
+    - is immediately understandable
+    - contains many recognizable concepts
+    - can provide at least 20 different concepts
+    - works well for similar-but-different word pairs
+    - is fun for a social party game
+    - is specific enough to feel like a real category
+    - is broad enough to provide many possible pairs
+    - is useful for players from different backgrounds
+
+    GOOD EXAMPLES:
+
+    - Anime
+    - Superheroes
+    - Car Brands
+    - Video Games
+    - Disney Characters
+    - Horror Movies
+    - European Cities
+    - Famous Landmarks
+    - Fast Food
+    - Desserts
+    - Dog Breeds
+    - Musical Instruments
+    - Sneakers
+    - Smartphone Brands
+    - Board Games
+    - Supermarkets
+    - Pop Stars
+    - Countries
+    - Football Players
+    - Mythological Creatures
+
+    ────────────────────────────────────────
+    AVOID BAD TOPICS
+    ────────────────────────────────────────
+
+    Never generate topics that are too abstract or generic.
+
+    BAD:
+
+    - Things
+    - Objects
+    - Entertainment
+    - Culture
+    - Society
+    - Technology
+    - Science
+    - History
+    - Famous Things
+    - Popular Things
+    - Everyday Life
+
+    These are too broad and do not define a useful word universe.
+
+    ────────────────────────────────────────
+    AVOID OVERLAPPING TOPICS
+    ────────────────────────────────────────
+
+    Do not generate multiple topics covering essentially the same universe.
+
+    BAD:
+
+    - Football
+    - Football Players
+    - Football Clubs
+
+    BAD:
+
+    - Cars
+    - Car Brands
+    - Sports Cars
+
+    BAD:
+
+    - Anime
+    - Anime Characters
+    - Anime Villains
+    - Anime Shows
+
+    Choose only ONE topic from a given universe.
+
+    Every topic should add a genuinely different category to the final list.
+
+    ────────────────────────────────────────
+    DIVERSITY
+    ────────────────────────────────────────
+
+    The 20 topics should cover different types of recognizable universes.
+
+    Include a balanced mixture of categories such as:
+
+    - entertainment
+    - food
+    - brands
+    - places
+    - people
+    - sports
+    - animals
+    - games
+    - objects
+    - fictional characters
+    - lifestyle
+
+    Do not fill the list with only movies, celebrities, or brands.
+
+    ────────────────────────────────────────
+    WORD-PAIR POTENTIAL
+    ────────────────────────────────────────
+
+    Prefer topics that naturally allow pairs of concepts that are:
+
+    - related
+    - recognizable
+    - distinct enough to be different words
+    - similar enough to create uncertainty
+    - easy to describe with a single clue
+
+    For example:
+
+    Topic: Desserts
+
+    Good possible pairs:
+    - Brownie / Cookie
+    - Waffle / Pancake
+    - Donut / Bagel
+
+    Topic: Dog Breeds
+
+    Good possible pairs:
+    - Husky / Malamute
+    - Beagle / Basset Hound
+    - Labrador / Golden Retriever
+
+    Topic: Famous Landmarks
+
+    Good possible pairs:
+    - Eiffel Tower / Arc de Triomphe
+    - Big Ben / London Eye
+    - Colosseum / Pantheon
+
+    Avoid categories where concepts would be too difficult to compare.
+
+    ────────────────────────────────────────
+    RECOGNIZABILITY
+    ────────────────────────────────────────
+
+    Prefer concepts that a typical player could recognize without
+    specialist knowledge.
+
+    Avoid:
+
+    - obscure academic subjects
+    - scientific classifications
+    - niche professions
+    - obscure historical events
+    - highly specialized terminology
+    - extremely regional references
+    - topics that require expert knowledge
+
+    ────────────────────────────────────────
+    TOPIC NAME
+    ────────────────────────────────────────
+
+    Topic names must be:
+
+    - short
+    - natural
+    - recognizable
+    - preferably 1–3 words
+
+    Do not use generic prefixes such as:
+
+    - Famous
+    - Popular
+    - Top
+    - Best
+    - Classic
+
+    BAD:
+
+    - Famous Movies
+    - Popular Foods
+    - Best Games
+
+    GOOD:
+
+    - Horror Movies
+    - Desserts
+    - Board Games
+
+    ────────────────────────────────────────
+    IMPORTANT QUALITY CHECK
+    ────────────────────────────────────────
+
+    Before producing the final answer, internally verify every topic.
+
+    For each topic ask:
+
+    1. Is it immediately understandable?
+    2. Does it contain at least 20 recognizable concepts?
+    3. Can it generate interesting similar-but-different word pairs?
+    4. Is it fun for a party game?
+    5. Is it sufficiently different from the other 19 topics?
+    6. Is it neither too broad nor too niche?
+
+    If a topic fails any of these checks, replace it.
+
+    ────────────────────────────────────────
+    OUTPUT FORMAT
+    ────────────────────────────────────────
+
+    Return ONLY a JSON array containing exactly 20 topic names.
+
+    No explanation.
+    No markdown.
+    No numbering.
+    No additional text.
+
+    Example:
+
     [
-    "Anime",
-    "Fast Food",
-    "Superheroes",
-    "European Cities",
-    "Video Games",
-    "Car Brands"
+        "Anime",
+        "Car Brands",
+        "Superheroes",
+        "European Cities",
+        "Fast Food",
+        "Video Games",
+        "Pop Stars",
+        "Board Games",
+        "Dog Breeds",
+        "Desserts",
+        "Sneakers",
+        "Disney Characters",
+        "Musical Instruments",
+        "Famous Landmarks",
+        "Smartphone Brands",
+        "Horror Movies",
+        "Football Players",
+        "Countries",
+        "Supermarkets",
+        "Mythological Creatures"
     ]
     """
 
     // MARK: - JSON Cleaning
 
-    private nonisolated static func cleanJSON(_ text: String) -> String {
+    private nonisolated static func cleanJSON(
+        _ text: String
+    ) -> String {
 
         let clean = text
-            .replacingOccurrences(of: "```json", with: "")
-            .replacingOccurrences(of: "```", with: "")
+            .replacingOccurrences(
+                of: "```json",
+                with: ""
+            )
+            .replacingOccurrences(
+                of: "```",
+                with: ""
+            )
             .trimmingCharacters(
                 in: .whitespacesAndNewlines
             )
@@ -199,8 +435,10 @@ public actor FoundationModelsTopicProvider: TopicProvider {
         "Fashion",
         "Architecture"
     ]
-    
-    private nonisolated static func fallbackGameTopics() -> [GameTopic] {
+
+    private nonisolated static func fallbackGameTopics()
+        -> [GameTopic]
+    {
         fallbackTopics.map { topic in
             GameTopic(
                 id: normalizeForID(topic),
@@ -209,17 +447,25 @@ public actor FoundationModelsTopicProvider: TopicProvider {
             )
         }
     }
-    
+
+    // MARK: - ID Normalization
+
     private nonisolated static func normalizeForID(
         _ value: String
     ) -> String {
+
         value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
             .lowercased()
             .folding(
                 options: .diacriticInsensitive,
                 locale: .current
             )
-            .replacingOccurrences(of: " ", with: "-")
+            .replacingOccurrences(
+                of: " ",
+                with: "-"
+            )
     }
 }

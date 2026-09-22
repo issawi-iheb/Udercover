@@ -30,7 +30,7 @@ struct TopicServiceTests {
         )
 
         // When
-        let topics = await service.topics()
+        let topics = await service.localTopics()
 
         // Then
         #expect(topics.map { $0.name } == [
@@ -69,7 +69,7 @@ struct TopicServiceTests {
         )
 
         // When
-        let topics = await service.topics()
+        let topics = await service.loadAITopics()
 
         // Then
         #expect(topics.map { $0.name } == [
@@ -85,7 +85,7 @@ struct TopicServiceTests {
     // MARK: - Merge
 
     @Test
-    func topics_mergesAndDeduplicatesProviders() async {
+    func loadAITopics_mergesWithLocalTopics() async {
 
         // Given
         let localProvider = MockTopicProvider(
@@ -126,7 +126,8 @@ struct TopicServiceTests {
         )
 
         // When
-        let topics = await service.topics()
+        _ = await service.localTopics()
+        let topics = await service.loadAITopics()
 
         // Then
         #expect(topics.map { $0.name } == [
@@ -137,8 +138,7 @@ struct TopicServiceTests {
 
         #expect(topics.count == 3)
 
-        // Local provider comes first, so the local Animals
-        // should win the duplicate.
+        // Local Animals wins the duplicate.
         #expect(
             topics.first { $0.id == "animals" }?.source == .local
         )
@@ -175,7 +175,7 @@ struct TopicServiceTests {
         )
 
         // When
-        let topics = await service.topics()
+        let topics = await service.localTopics()
 
         // Then
         #expect(topics.map { $0.name } == [
@@ -185,10 +185,10 @@ struct TopicServiceTests {
         ])
     }
 
-    // MARK: - Cache
+    // MARK: - Local Cache
 
     @Test
-    func topics_cachesResultAfterFirstCall() async {
+    func localTopics_cachesResultAfterFirstCall() async {
 
         // Given
         let provider = CountingTopicProvider(
@@ -206,8 +206,8 @@ struct TopicServiceTests {
         )
 
         // When
-        let firstCall = await service.topics()
-        let secondCall = await service.topics()
+        let firstCall = await service.localTopics()
+        let secondCall = await service.localTopics()
 
         // Then
         #expect(firstCall == secondCall)
@@ -220,21 +220,53 @@ struct TopicServiceTests {
     func topics_returnsEmptyWhenAllProvidersEmpty() async {
 
         // Given
-        let localProvider = MockTopicProvider(topics: [])
-        let aiProvider = MockTopicProvider(topics: [])
-
-        let service = TopicService(
-            providers: [
-                localProvider,
-                aiProvider
+        let aiProvider = MockTopicProvider(
+            topics: [
+                GameTopic(
+                    id: "cars",
+                    name: "Cars",
+                    source: .ai
+                )
             ]
         )
 
+        let service = TopicService(
+            providers: [aiProvider]
+        )
+
         // When
-        let topics = await service.topics()
+        let topics = await service.localTopics()
 
         // Then
         #expect(topics.isEmpty)
+    }
+
+    @Test
+    func loadAITopics_keepsLocalTopicsWhenNoAIProvider() async {
+
+        // Given
+        let localProvider = MockTopicProvider(
+            topics: [
+                GameTopic(
+                    id: "animals",
+                    name: "Animals",
+                    source: .local
+                )
+            ]
+        )
+
+        let service = TopicService(
+            providers: [localProvider]
+        )
+
+        // When
+        _ = await service.localTopics()
+        let topics = await service.loadAITopics()
+
+        // Then
+        #expect(topics.map { $0.name } == [
+            "Animals"
+        ])
     }
 }
 
@@ -242,10 +274,12 @@ struct TopicServiceTests {
 
 private struct MockTopicProvider: TopicProvider {
 
+    let source: TopicSource
     let topicsToReturn: [GameTopic]
 
     init(topics: [GameTopic]) {
         self.topicsToReturn = topics
+        self.source = topics.first?.source ?? .local
     }
 
     func topics() async -> [GameTopic] {
@@ -255,11 +289,14 @@ private struct MockTopicProvider: TopicProvider {
 
 private actor CountingTopicProvider: TopicProvider {
 
+    nonisolated let source: TopicSource
     let topicsToReturn: [GameTopic]
+
     private(set) var callCount = 0
 
     init(topics: [GameTopic]) {
         self.topicsToReturn = topics
+        self.source = topics.first?.source ?? .local
     }
 
     func topics() async -> [GameTopic] {

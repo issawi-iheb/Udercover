@@ -13,7 +13,7 @@ import Foundation
 public struct GameTopic: Hashable, Identifiable {
     public let id: String       // Normalized identifier
     public let name: String     // Display name
-    public let source: TopicSource
+    public nonisolated let source: TopicSource
 
     public nonisolated init(id: String, name: String, source: TopicSource) {
         self.id = id

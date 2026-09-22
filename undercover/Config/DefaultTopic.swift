@@ -10,6 +10,6 @@ import Foundation
 
 enum DefaultTopic {
 
-    static let value = "Popular Culture"
+    static let value = "Animal"
 
 }

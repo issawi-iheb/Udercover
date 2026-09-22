@@ -22,35 +22,40 @@ public actor TopicService {
         self.providers = providers
     }
 
-    public func topics() async -> [GameTopic] {
+    public func localTopics() async -> [GameTopic] {
         if !cachedTopics.isEmpty {
             return cachedTopics
         }
 
-        let allTopics = await withTaskGroup(
-            of: [GameTopic].self
-        ) { group in
-
-            for provider in providers {
-                group.addTask {
-                    await provider.topics()
-                }
-            }
-
-            var result: [GameTopic] = []
-
-            for await topics in group {
-                result.append(contentsOf: topics)
-            }
-
-            return result
+        guard let provider = providers.first(
+            where: { $0.source == .local }
+        ) else {
+            return cachedTopics
         }
 
-        cachedTopics = mergeTopics(allTopics)
+        let topics = await provider.topics()
 
+        cachedTopics = mergeTopics(topics)
         print("""
         📚 [TopicService] Loaded \(cachedTopics.count) topics
         📦 Local: \(cachedTopics.filter { $0.source == .local }.count)
+        """)
+        return cachedTopics
+    }
+
+    public func loadAITopics() async -> [GameTopic] {
+        guard let provider = providers.first(where: {
+            $0.source == .ai
+        }) else {
+            return cachedTopics
+        }
+
+        let topics = await provider.topics()
+
+        cachedTopics = mergeTopics(
+            cachedTopics + topics
+        )
+        print("""
         🧠 AI: \(cachedTopics.filter { $0.source == .ai }.count)
         """)
 
@@ -60,7 +65,6 @@ public actor TopicService {
     private func mergeTopics(
         _ topics: [GameTopic]
     ) -> [GameTopic] {
-
         var result: [GameTopic] = []
         var seen = Set<String>()
 
@@ -73,7 +77,8 @@ public actor TopicService {
         }
 
         return result.sorted {
-            $0.name < $1.name
+            $0.name.localizedCaseInsensitiveCompare($1.name)
+                == .orderedAscending
         }
     }
 }

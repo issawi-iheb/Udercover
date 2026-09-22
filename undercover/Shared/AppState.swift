@@ -31,8 +31,14 @@ public final class AppState: ObservableObject {
             return
         }
 
-        topics = await topicService.topics()
-
+        // Wait for local topics.
+        topics = await topicService.localTopics()
         isReady = true
+
+        // AI topics load in the background.
+        Task {
+            let topics = await topicService.loadAITopics()
+            self.topics = topics
+        }
     }
 }

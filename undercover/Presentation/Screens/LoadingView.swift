@@ -54,7 +54,7 @@ struct LoadingView: View {
             }
         }
         .onAppear {
-            withAnimation(.easeOut(duration: 0.5).delay(1.7)) {
+            withAnimation(.easeOut(duration: 0.5)) {
                 textIn = true
             }
         }

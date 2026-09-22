@@ -11,6 +11,7 @@ import Foundation
 
 /// Provides a list of topics/categories for the game.
 public protocol TopicProvider: Sendable {
+    nonisolated var  source: TopicSource { get }
     func topics() async -> [GameTopic]
 }
 
@@ -19,6 +20,7 @@ public protocol TopicProvider: Sendable {
 /// Provides topics from the local words.json repository.
 
 public actor LocalTopicProvider: TopicProvider {
+    public nonisolated let source: TopicSource = .local
 
     private let repository: any TopicRepository
 
