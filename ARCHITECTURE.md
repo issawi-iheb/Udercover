@@ -9,9 +9,7 @@ This document describes the architecture of the Undercover app, a social deducti
 ```mermaid
 flowchart TD
     %% Presentation Layer
-    subgraph UI["SwiftUI Views"]
-        SwiftUIViews["SwiftUI Views"]
-    end
+    SwiftUIViews["SwiftUI Views"]
     
     %% Orchestration Layer
     subgraph Orchestration["@MainActor Layer"]
@@ -49,13 +47,17 @@ flowchart TD
         AppStrings[AppStrings<br/>Localized Strings]
     end
     
-    subgraph DesignSystem["Design System"]
-        DesignSystem["Design System"]
-    end
+    DesignSystem["Design System"]
+    
+    %% Explicit node declarations
+    FoundationModels["Foundation Models<br/>Language Model Session"]
+    CachedTopics["Cached Topics<br/>GameTopic"]
+    WordsJSON["words.json"]
+    UsedConcepts["Used Concepts Set"]
     
     %% Connections
     %% Presentation to Orchestration
-    GameViewModel -->|@Published state| SwiftUIViews
+    GameViewModel -->|Published state| SwiftUIViews
     SwiftUIViews -->|User actions| GameViewModel
     
     %% Orchestration to Domain
@@ -75,16 +77,16 @@ flowchart TD
     TopicSvc -->|Local topics| LocalProv
     TopicSvc -->|AI topics| LLMPProv
     LocalProv -->|Topics from| WordRepo
-    LLMPProv -->|Generate via| FoundationModels[Foundation Models<br/>Language Model Session]
-    TopicSvc -->|Merge topics| CachedTopics[Cached Topics<br/>[GameTopic]]
+    LLMPProv -->|Generate via| FoundationModels
+    TopicSvc -->|Merge topics| CachedTopics
     TopicSvc -->|Return topics| AppState
     
     %% Word Generation Details
     WordPairProvider -->|Tracks| PlayedStore
     LocalGen -->|Uses| WordRepo
-    WordRepo -->|Access| words_json
+    WordRepo -->|Access| WordsJSON
     WordRepo -->|Uses| Normalization
-    PlayedStore -->|Tracks| UsedConcepts[Used Concepts Set]
+    PlayedStore -->|Tracks| UsedConcepts
     
     %% Cross-cutting
     AppLanguage -->|Provides| AppStrings
@@ -106,7 +108,7 @@ flowchart TD
     class GameViewModel,AppState,WordPairProvider mainActor;
     class WordGenSvc,LocalGen,LLMGen,TopicSvc,LocalProv,LLMPProv actor;
     class GameStateMachine,GameEngine domain;
-    class WordRepo,PlayedStore,words_json,Normalization infrastructure;
+    class WordRepo,PlayedStore,WordsJSON,UsedConcepts,Normalization infrastructure;
     class AppLanguage,AppStrings localization;
     class DesignSystem design;
 ```
