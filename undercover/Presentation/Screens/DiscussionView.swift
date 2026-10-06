@@ -54,17 +54,6 @@ public struct DiscussionView: View {
                 Color.appBackground
                     .ignoresSafeArea()
 
-                // Central glow
-                RadialGradient.spotlight(
-                    color: timerColor.opacity(isUrgent ? 0.6 : 0.15),
-                    radius: isUrgent ? 320 : 200
-                )
-                .animation(
-                    .easeInOut(duration: 0.8),
-                    value: isUrgent
-                )
-                .allowsHitTesting(false)
-
                 VStack(spacing: 0) {
 
                     // MARK: Top bar
@@ -184,7 +173,6 @@ public struct DiscussionView: View {
                                 cornerRadius: Radius.md
                             )
                         )
-                        .glow(color: .brandPurple)
                     }
                     .padding(.horizontal, Space.pagePadding)
                     .padding(
@@ -203,19 +191,17 @@ public struct DiscussionView: View {
                         viewModel.skipVoting()
                     } label: {
                         Text("SKIP VOTE")
-                            .font(AppFont.button(size: 15))
+                            .font(AppFont.button(size: 14))
                             .tracking(
-                                viewModel.selectedLanguage.isRTL
-                                ? 0
-                                : 3
+                                viewModel.selectedLanguage.isRTL ? 0 : 2
                             )
                             .foregroundStyle(
-                                Color.white.opacity(0.55)
+                                Color.white.opacity(0.45)
                             )
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, 14)
                             .background(
-                                Color.white.opacity(0.04)
+                                Color.white.opacity(0.025)
                             )
                             .clipShape(
                                 RoundedRectangle(
@@ -227,7 +213,7 @@ public struct DiscussionView: View {
                                     cornerRadius: Radius.md
                                 )
                                 .strokeBorder(
-                                    Color.appBorder,
+                                    Color.white.opacity(0.08),
                                     lineWidth: 1
                                 )
                             )

@@ -147,6 +147,7 @@ public struct LobbyView: View {
                 }
                 .padding(.horizontal, 2).padding(.vertical, 4)
             }
+            .environment(\.layoutDirection, .leftToRight)
         }
         .opacity(appeared ? 1 : 0).offset(y: appeared ? 0 : 16)
         .animation(.appDramatic.delay(0.18), value: appeared)
@@ -275,6 +276,7 @@ public struct LobbyView: View {
                 .padding(.horizontal, 2)
                 .padding(.vertical, 4)
             }
+            .environment(\.layoutDirection, .leftToRight)
         }
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 16)

@@ -6,31 +6,20 @@
 import SwiftUI
 
 public struct HomeView: View {
-    @State private var appeared  = false
-    @State private var glowScale = false
+    @State private var appeared = false
 
     public var body: some View {
         NavigationStack {
             ZStack {
+                // ✅ Dark background only — no breathing glows
                 LinearGradient.brandBackground.ignoresSafeArea()
-
-                // Breathing ambient glows
-                Circle().fill(Color.brandPurple.opacity(0.22)).blur(radius: 130)
-                    .offset(x: -110, y: -220)
-                    .scaleEffect(glowScale ? 1.15 : 0.88)
-                    .animation(.easeInOut(duration: 4.5).repeatForever(autoreverses: true), value: glowScale)
-
-                Circle().fill(Color.brandPink.opacity(0.14)).blur(radius: 150)
-                    .offset(x: 130, y: 240)
-                    .scaleEffect(glowScale ? 0.9 : 1.18)
-                    .animation(.easeInOut(duration: 5.5).repeatForever(autoreverses: true), value: glowScale)
 
                 VStack(spacing: 0) {
                     Spacer()
 
-                    // Identity block
+                    // Identity block — centered, breathes on its own via animation
                     VStack(spacing: 24) {
-                        // Logo icon
+                        // Logo: MrWhiteDrawing (handles its own animation)
                         MrWhiteDrawing()
                             .frame(width: 190, height: 190)
                             .scaleEffect(appeared ? 1 : 0.85)
@@ -39,9 +28,6 @@ public struct HomeView: View {
                                 .spring(response: 0.7, dampingFraction: 0.58).delay(0.1),
                                 value: appeared
                             )
-                        .scaleEffect(appeared ? 1 : 0.65)
-                        .opacity(appeared ? 1 : 0)
-                        .animation(.spring(response: 0.7, dampingFraction: 0.58).delay(0.1), value: appeared)
 
                         VStack(spacing: 10) {
                             Text("UNDERCOVER")
@@ -49,7 +35,7 @@ public struct HomeView: View {
                                 .foregroundStyle(.white)
                                 .tracking(5)
 
-                            // Tagline — typewriter on appear
+                            // Tagline — animated typewriter effect
                             if appeared {
                                 TypewriterText(
                                     text:     "Blend in. Or get caught.",
@@ -59,16 +45,17 @@ public struct HomeView: View {
                                 )
                             }
                         }
+                        .multilineTextAlignment(.center)
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 18)
                         .animation(.appDramatic.delay(0.25), value: appeared)
                     }
-                    .multilineTextAlignment(.center)
 
                     Spacer()
 
-                    // CTA
+                    // CTA section — clear, primary action
                     VStack(spacing: 14) {
+                        // ✅ PLAY button — primary, unmissable
                         NavigationLink { LobbyView() } label: {
                             HStack(spacing: 14) {
                                 Text("PLAY")
@@ -80,8 +67,9 @@ public struct HomeView: View {
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 20)
+                            // ✅ Functional glow: indicates primary action
                             .background(LinearGradient.brandGlow)
-                            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
                             .glow(color: .brandPurple, radius: 10)
                         }
                         .buttonStyle(PartyButtonStyle(gradient: .brandGlow, glowColor: .brandPurple, disabled: false))
@@ -100,8 +88,7 @@ public struct HomeView: View {
                 }
             }
             .onAppear {
-                appeared  = true
-                glowScale = true
+                appeared = true
             }
         }
     }

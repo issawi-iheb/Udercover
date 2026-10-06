@@ -494,12 +494,16 @@ public final class GameViewModel: ObservableObject {
             civilianWord: currentCivilianWord
         )
 
+        resolveMrWhiteGuess(correct: correct)
+    }
+
+    public func resolveMrWhiteGuess(correct: Bool) {
         let board = engine.evaluateBoard(
             alivePlayers: alivePlayers,
             rolesByPlayer: rolesByPlayer
         )
 
-        print("🃏 Mr White guess: \(mrWhiteGuessInput)")
+        print("🃏 Mr White guess resolved")
         print("Correct: \(correct)")
 
         fsm.handle(
@@ -514,9 +518,9 @@ public final class GameViewModel: ObservableObject {
         syncState()
 
         if correct {
-            Haptic.error()
+            Haptic.mrWhiteWins()
         } else {
-            Haptic.success()
+            Haptic.mrWhiteWrongGuess()
         }
     }
 

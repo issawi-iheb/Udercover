@@ -13,10 +13,11 @@ import FoundationModels
 
 public actor FoundationModelsTopicProvider: TopicProvider {
 
-    public init() {}
+    public nonisolated let source: TopicSource = .ai
 
     private var cachedTopics: [GameTopic]?
-    public nonisolated let source: TopicSource = .ai
+
+    public init() {}
 
     // MARK: - Public API
 
@@ -28,85 +29,119 @@ public actor FoundationModelsTopicProvider: TopicProvider {
 
         #if canImport(FoundationModels)
 
-        if #available(iOS 26.0, *) {
+        guard #available(iOS 26.0, *) else {
+            return Self.fallbackGameTopics()
+        }
 
-            let session = LanguageModelSession(
-                instructions: Self.systemPrompt
+        let session = LanguageModelSession(
+            instructions: Self.systemPrompt
+        )
+
+        do {
+            let response = try await session.respond(
+                to: """
+                Generate 25 distinct topic categories for the party game Undercover.
+                """
             )
 
-            do {
-                let response = try await session.respond(
-                    to: """
-                    Generate 20 distinct, high-quality topic categories for
-                    the party game Undercover.
-                    """
-                )
+            let topics = try Self.parseTopics(
+                from: response.content
+            )
 
-                let json = Self.cleanJSON(response.content)
-
-                guard let data = json.data(using: .utf8) else {
-                    return Self.fallbackGameTopics()
-                }
-
-                let generatedTopics = try JSONDecoder().decode(
-                    [String].self,
-                    from: data
-                )
-
-                let cleanedTopics = generatedTopics
-                    .map {
-                        $0.trimmingCharacters(
-                            in: .whitespacesAndNewlines
-                        )
-                    }
-                    .filter {
-                        !$0.isEmpty
-                    }
-
+            guard topics.count >= 20 else {
                 print("""
-                🧠 [FoundationModelsTopicProvider]
-                Generated topics:
-                \(cleanedTopics.enumerated()
-                    .map {
-                        "\($0.offset + 1). \($0.element)"
-                    }
-                    .joined(separator: "\n"))
+                ⚠️ [FoundationModelsTopicProvider]
+                Expected at least 20 unique topics, got \(topics.count)
+                Using fallback topics.
                 """)
-
-                guard cleanedTopics.count == 20 else {
-                    print("""
-                    ⚠️ [FoundationModelsTopicProvider]
-                    Expected exactly 20 topics, got \(cleanedTopics.count)
-                    """)
-
-                    return Self.fallbackGameTopics()
-                }
-
-                let topics = cleanedTopics.map { topic in
-                    GameTopic(
-                        id: Self.normalizeForID(topic),
-                        name: topic,
-                        source: .ai
-                    )
-                }
-
-                self.cachedTopics = topics
-
-                return topics
-
-            } catch {
-                print(
-                    "[FoundationModelsTopicProvider] Generation failed:",
-                    error
-                )
 
                 return Self.fallbackGameTopics()
             }
+
+            let selectedTopics = Array(topics.prefix(20))
+
+            let gameTopics = selectedTopics.map { topic in
+                GameTopic(
+                    id: Self.normalizeForID(topic),
+                    name: topic,
+                    source: .ai
+                )
+            }
+
+            cachedTopics = gameTopics
+
+            print("""
+            🧠 [FoundationModelsTopicProvider]
+            Generated \(gameTopics.count) AI topics:
+            \(gameTopics.enumerated()
+                .map {
+                    "\($0.offset + 1). \($0.element.name)"
+                }
+                .joined(separator: "\n"))
+            """)
+
+            return gameTopics
+
+        } catch {
+            print(
+                "[FoundationModelsTopicProvider] Generation failed:",
+                error
+            )
+
+            print(
+                "⚠️ [FoundationModelsTopicProvider] Using fallback topics."
+            )
+
+            return Self.fallbackGameTopics()
         }
 
-        #endif
+        #else
 
         return Self.fallbackGameTopics()
+
+        #endif
+    }
+
+    // MARK: - Parsing
+
+    private nonisolated static func parseTopics(
+        from response: String
+    ) throws -> [String] {
+
+        let json = cleanJSON(response)
+
+        guard let data = json.data(using: .utf8) else {
+            return []
+        }
+
+        let generatedTopics = try JSONDecoder().decode(
+            [String].self,
+            from: data
+        )
+
+        var uniqueTopics: [String] = []
+        var seenIDs = Set<String>()
+
+        for topic in generatedTopics {
+
+            let name = topic.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+
+            guard !name.isEmpty else {
+                continue
+            }
+
+            let id = normalizeForID(name)
+
+            guard seenIDs.insert(id).inserted else {
+                continue
+            }
+
+            uniqueTopics.append(name)
+        }
+
+        return uniqueTopics
     }
 
     // MARK: - System Prompt
@@ -129,7 +164,7 @@ public actor FoundationModelsTopicProvider: TopicProvider {
     The topic defines a large universe from which the game can later
     generate many recognizable concepts and ambiguous word pairs.
 
-    Your job is to generate exactly 20 excellent topic categories.
+    Generate 25 excellent topic categories.
 
     ────────────────────────────────────────
     WHAT MAKES A GOOD TOPIC
@@ -224,9 +259,9 @@ public actor FoundationModelsTopicProvider: TopicProvider {
     DIVERSITY
     ────────────────────────────────────────
 
-    The 20 topics should cover different types of recognizable universes.
+    Cover different types of recognizable universes.
 
-    Include a balanced mixture of categories such as:
+    Include a balanced mixture of:
 
     - entertainment
     - food
@@ -254,25 +289,19 @@ public actor FoundationModelsTopicProvider: TopicProvider {
     - similar enough to create uncertainty
     - easy to describe with a single clue
 
-    For example:
+    Examples:
 
-    Topic: Desserts
-
-    Good possible pairs:
+    Desserts:
     - Brownie / Cookie
     - Waffle / Pancake
     - Donut / Bagel
 
-    Topic: Dog Breeds
-
-    Good possible pairs:
+    Dog Breeds:
     - Husky / Malamute
     - Beagle / Basset Hound
     - Labrador / Golden Retriever
 
-    Topic: Famous Landmarks
-
-    Good possible pairs:
+    Famous Landmarks:
     - Eiffel Tower / Arc de Triomphe
     - Big Ben / London Eye
     - Colosseum / Pantheon
@@ -294,7 +323,7 @@ public actor FoundationModelsTopicProvider: TopicProvider {
     - obscure historical events
     - highly specialized terminology
     - extremely regional references
-    - topics that require expert knowledge
+    - topics requiring expert knowledge
 
     ────────────────────────────────────────
     TOPIC NAME
@@ -328,10 +357,10 @@ public actor FoundationModelsTopicProvider: TopicProvider {
     - Board Games
 
     ────────────────────────────────────────
-    IMPORTANT QUALITY CHECK
+    FINAL QUALITY CHECK
     ────────────────────────────────────────
 
-    Before producing the final answer, internally verify every topic.
+    Before producing the final answer, verify every topic.
 
     For each topic ask:
 
@@ -339,16 +368,16 @@ public actor FoundationModelsTopicProvider: TopicProvider {
     2. Does it contain at least 20 recognizable concepts?
     3. Can it generate interesting similar-but-different word pairs?
     4. Is it fun for a party game?
-    5. Is it sufficiently different from the other 19 topics?
+    5. Is it sufficiently different from the other topics?
     6. Is it neither too broad nor too niche?
 
-    If a topic fails any of these checks, replace it.
+    If a topic fails any check, replace it.
 
     ────────────────────────────────────────
     OUTPUT FORMAT
     ────────────────────────────────────────
 
-    Return ONLY a JSON array containing exactly 20 topic names.
+    Return ONLY a JSON array containing 25 topic names.
 
     No explanation.
     No markdown.
@@ -377,7 +406,12 @@ public actor FoundationModelsTopicProvider: TopicProvider {
         "Football Players",
         "Countries",
         "Supermarkets",
-        "Mythological Creatures"
+        "Mythological Creatures",
+        "Cocktails",
+        "Comic Book Heroes",
+        "Breakfast Foods",
+        "Theme Parks",
+        "Household Appliances"
     ]
     """
 
