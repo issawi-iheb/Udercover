@@ -32,14 +32,6 @@ public enum GameResult: nonisolated Equatable, Sendable {
     case undercoverWins
     case mrWhiteWins
     
-    public var title: String {
-        switch self {
-            case .civiliansWin:   return "Civilians Win!"
-            case .undercoverWins: return "Undercover Wins!"
-            case .mrWhiteWins:    return "Mr. White Wins!"
-        }
-    }
-    
     public var emoji: String {
         switch self {
             case .civiliansWin:   return "🎉"

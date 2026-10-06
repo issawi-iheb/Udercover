@@ -28,9 +28,11 @@ public struct VotingView: View {
                 )
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
 
                 // Screen flash on elimination
                 ScreenFlash(color: .brandPink, trigger: $flashTrigger)
+                    .accessibilityHidden(true)
 
                 VStack(spacing: 0) {
                     Spacer(minLength: 32)
@@ -43,10 +45,12 @@ public struct VotingView: View {
                             if hasSelection {
                                 PulsingRing(color: .brandPink,
                                             size: 80)
+                                .accessibilityHidden(true)
                             }
                             Image(systemName: "person.fill.xmark")
                                 .font(.system(size: 24))
                                 .foregroundStyle(Color.brandPink)
+                                .accessibilityHidden(true)
                         }
 
                         Text(s.voteOut)
@@ -80,14 +84,16 @@ public struct VotingView: View {
                                     index:       idx,
                                     isSelected:  viewModel.selectedVotePlayerID == player.id,
                                     isEliminated: player.isEliminated,
-                                    dimmed:      hasSelection && viewModel.selectedVotePlayerID != player.id && !player.isEliminated
-                                ) {
-                                    guard !player.isEliminated else { return }
-                                    Haptic.voteCast()
-                                    withAnimation(.appSnap) {
-                                        viewModel.selectedVotePlayerID = player.id
-                                    }
-                                }
+                                    dimmed:      hasSelection && viewModel.selectedVotePlayerID != player.id && !player.isEliminated,
+                                    onTap: {
+                                        guard !player.isEliminated else { return }
+                                        Haptic.voteCast()
+                                        withAnimation(.appSnap) {
+                                            viewModel.selectedVotePlayerID = player.id
+                                        }
+                                    },
+                                    strings: s
+                                )
                             }
                         }
                         .padding(.horizontal, Space.md)
@@ -119,6 +125,15 @@ public struct VotingView: View {
                         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
                         .glow(color: hasSelection ? .brandPink : .clear)
                     }
+                    .accessibilityLabel(s.confirmVote)
+                    .accessibilityHint({
+                        guard let votedID = viewModel.selectedVotePlayerID,
+                              let votedPlayer = viewModel.players.first(where: { $0.id == votedID }) else {
+                            return ""
+                        }
+
+                        return s.confirmVoteHint(votedPlayer.name)
+                    }())
                     .disabled(!hasSelection)
                     .padding(.horizontal, Space.pagePadding)
                     .padding(.bottom, geo.safeAreaInsets.bottom + Space.md)
@@ -143,11 +158,17 @@ public struct VotingView: View {
 
     private func confirmationOverlay(player: Player, geo: GeometryProxy) -> some View {
         ZStack {
-            Color.black.opacity(0.75).ignoresSafeArea()
-                .onTapGesture { withAnimation(.appSnap) { confirming = false } }
+            Color.black.opacity(0.75)
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
+                .onTapGesture {
+                    withAnimation(.appSnap) {
+                        confirming = false
+                    }
+                }
 
             VStack(spacing: Space.lg) {
-                Text("ELIMINATE")
+                Text(s.eliminate)
                     .font(AppFont.label(size: 14))
                     .foregroundStyle(Color.brandPink)
                     .tracking(4)
@@ -156,41 +177,52 @@ public struct VotingView: View {
                     .font(AppFont.playerName(size: 36))
                     .foregroundStyle(.white)
 
-                Text("Are you sure? This cannot be undone.")
+                Text(s.eliminationConfirmation)
                     .font(AppFont.body(size: 14))
                     .foregroundStyle(Color.white.opacity(0.45))
                     .multilineTextAlignment(.center)
 
                 HStack(spacing: 14) {
-                    // Cancel
                     Button {
-                        withAnimation(.appSnap) { confirming = false }
+                        withAnimation(.appSnap) {
+                            confirming = false
+                        }
                     } label: {
-                        Text("CANCEL")
-                            .font(AppFont.button(size: 15)).tracking(1)
+                        Text(s.cancel)
+                            .font(AppFont.button(size: 15))
+                            .tracking(1)
                             .foregroundStyle(Color.white.opacity(0.6))
-                            .frame(maxWidth: .infinity).padding(.vertical, 16)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
                             .background(Color.white.opacity(0.08))
                             .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-                            .overlay(RoundedRectangle(cornerRadius: Radius.md)
-                                .strokeBorder(Color.appBorder, lineWidth: 1))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Radius.md)
+                                    .strokeBorder(Color.appBorder, lineWidth: 1)
+                            )
                     }
+                    .accessibilityLabel(s.cancel)
+                    .accessibilityHint(s.cancelHint)
 
-                    // Confirm
                     Button {
                         confirming = false
                         flashTrigger = true
                         Haptic.playerEliminated()
-                        withAnimation(.appSnap) { viewModel.finishVoting() }
+                        withAnimation(.appSnap) {
+                            viewModel.finishVoting()
+                        }
                     } label: {
-                        Text("ELIMINATE")
-                            .font(AppFont.button(size: 15)).tracking(1)
+                        Text(s.eliminate)
+                            .font(AppFont.button(size: 15))
+                            .tracking(1)
                             .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity).padding(.vertical, 16)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
                             .background(LinearGradient.dangerGlowStrong)
                             .clipShape(RoundedRectangle(cornerRadius: Radius.md))
                             .glow(color: .dangerRed, radius: 12)
                     }
+                    .accessibilityHint(s.confirmEliminationHint(player.name))
                 }
             }
             .padding(Space.xl)
@@ -211,8 +243,16 @@ public struct VoteCard: View {
     let isEliminated: Bool
     let dimmed:       Bool
     let onTap:        () -> Void
+    let strings:      AppStrings
 
     private var accent: Color { .avatar(for: index) }
+    private var initial: String { String(player.name.prefix(1)).uppercased() }
+    private var backgroundFillColor: Color {
+        isSelected ? accent.opacity(0.14) : (isEliminated ? Color.white.opacity(0.02) : Color.white.opacity(0.04))
+    }
+    private var cardAccessibilityLabel: String {
+        "\(player.name), \(isSelected ? strings.selected : strings.notSelected), \(isEliminated ? strings.eliminated : strings.active)"
+    }
 
     public var body: some View {
         Button(action: onTap) {
@@ -230,7 +270,7 @@ public struct VoteCard: View {
                                 lineWidth: isSelected ? 2 : 1
                             ))
 
-                        Text(String(player.name.prefix(1)).uppercased())
+                        Text(initial)
                             .font(AppFont.playerName(size: 22))
                             .foregroundStyle(isEliminated ? Color.white.opacity(0.15) : accent)
 
@@ -260,7 +300,7 @@ public struct VoteCard: View {
                         .lineLimit(1)
 
                     if isEliminated {
-                        Text("ELIMINATED")
+                        Text(strings.eliminated)
                             .font(AppFont.label(size: 9))
                             .foregroundStyle(Color.brandPink.opacity(0.5))
                             .tracking(1)
@@ -269,9 +309,7 @@ public struct VoteCard: View {
                 .padding(12)
                 .frame(maxWidth: .infinity)
                 .background(RoundedRectangle(cornerRadius: Radius.md)
-                    .fill(isSelected
-                          ? accent.opacity(0.14)
-                          : (isEliminated ? Color.white.opacity(0.02) : Color.white.opacity(0.04))))
+                    .fill(backgroundFillColor))
                 .overlay(RoundedRectangle(cornerRadius: Radius.md)
                     .strokeBorder(
                         isSelected ? accent.opacity(0.6)
@@ -287,5 +325,13 @@ public struct VoteCard: View {
         }
         .buttonStyle(.plain)
         .disabled(isEliminated)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(cardAccessibilityLabel)
+        .accessibilityHint(
+            isSelected
+                ? strings.voteSelectedHint
+                : strings.voteSelectHint
+        )
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

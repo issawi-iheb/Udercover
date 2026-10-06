@@ -26,6 +26,7 @@ public struct LobbyView: View {
             // Ambient glow
             Circle().fill(Color.brandPurple.opacity(0.18)).blur(radius: 140)
                 .offset(x: -100, y: -280).allowsHitTesting(false)
+                .accessibilityHidden(true)
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: Space.lg) {
@@ -51,6 +52,8 @@ public struct LobbyView: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
                 }
+                .accessibilityLabel(strings.backButton)
+                .accessibilityHint(strings.backButtonHint)
             }
         }
         .onAppear {
@@ -124,7 +127,7 @@ public struct LobbyView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     TopicPill(label: strings.random, icon: "shuffle",
-                              isSelected: viewModel.selectedTopic == nil) {
+                              isSelected: viewModel.selectedTopic == nil, strings: strings) {
                         Haptic.light()
                         withAnimation(.appSnap) {
                             viewModel.selectTopic(nil)
@@ -135,7 +138,7 @@ public struct LobbyView: View {
                         TopicPill(
                             label: topic.name,
                             icon: topicIcon(topic.name),
-                            isSelected: viewModel.selectedTopic == topic.id
+                            isSelected: viewModel.selectedTopic == topic.id, strings: strings
                         ) {
                             Haptic.light()
 
@@ -183,6 +186,7 @@ public struct LobbyView: View {
                     Image(systemName: "suit.club.fill")
                         .font(.system(size: 19, weight: .semibold))
                         .foregroundStyle(Color.brandPink)
+                        .accessibilityHidden(true)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -208,6 +212,8 @@ public struct LobbyView: View {
                 Toggle("", isOn: $viewModel.mrWhiteModeEnabled)
                     .labelsHidden()
                     .tint(.brandPink)
+                    .accessibilityLabel(strings.mrWhite)
+                    .accessibilityHint(strings.mrWhiteToggleHint)
             }
             .padding(14)
             .background {
@@ -263,7 +269,8 @@ public struct LobbyView: View {
                     ForEach(AppLanguage.allCases, id: \.self) { language in
                         LanguagePill(
                             language: language,
-                            isSelected: viewModel.selectedLanguage == language
+                            isSelected: viewModel.selectedLanguage == language,
+                            strings: strings
                         ) {
                             Haptic.light()
 
@@ -291,6 +298,7 @@ public struct LobbyView: View {
                 Text("\(viewModel.players.count) / 10")
                     .font(AppFont.label(size: 11))
                     .foregroundStyle(Color.white.opacity(0.35))
+                    .accessibilityLabel(strings.playerCount(viewModel.players.count))
             }
 
             if !viewModel.players.isEmpty {
@@ -349,6 +357,7 @@ public struct LobbyView: View {
                         )
                         .font(AppFont.playerName(size: 17))
                         .foregroundStyle(accent)
+                        .accessibilityHidden(true)
                     }
 
                 Button {
@@ -361,9 +370,12 @@ public struct LobbyView: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 20))
                         .foregroundStyle(Color.red)
+                        .accessibilityHidden(true)
                 }
                 .buttonStyle(.plain)
                 .offset(x: 5, y: -5)
+                .accessibilityLabel(strings.removePlayerLabel(player.name))
+                .accessibilityHint(strings.removePlayerHint)
             }
 
             Text(player.name)
@@ -384,8 +396,10 @@ public struct LobbyView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.brandPurple)
                 .frame(width: 22)
+                .accessibilityHidden(true)
 
             TextField(strings.playerNamePlaceholder, text: $playerName)
+                .accessibilityLabel(strings.playerNamePlaceholder)
                 .focused($nameFocused)
                 .font(AppFont.body(size: 16, weight: .semibold))
                 .foregroundStyle(.white)
@@ -409,6 +423,8 @@ public struct LobbyView: View {
             }
             .buttonStyle(.plain)
             .disabled(playerName.trimmingCharacters(in: .whitespaces).isEmpty)
+            .accessibilityLabel(strings.addPlayerButtonLabel)
+            .accessibilityHint(strings.addPlayerHint)
             .opacity(
                 playerName.trimmingCharacters(in: .whitespaces).isEmpty ? 0.45 : 1
             )
@@ -445,6 +461,7 @@ public struct LobbyView: View {
                         .font(AppFont.button(size: 18)).tracking(2)
                     Image(systemName: "arrow.right.circle.fill")
                         .font(.system(size: 20))
+                        .accessibilityHidden(true)
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity).padding(.vertical, 20)
@@ -458,6 +475,8 @@ public struct LobbyView: View {
                 .glow(color: canStart ? .brandPurple : .clear, radius: 10)
             }
             .disabled(!canStart || viewModel.isGeneratingWords)
+            .accessibilityLabel(strings.startGame)
+            .accessibilityHint(strings.startGameHint)
             .animation(.appSnap, value: canStart)
 
             if !canStart {
@@ -516,6 +535,7 @@ private struct DifficultyButton: View {
             VStack(spacing: 6) {
                 Text(difficulty.emoji)
                     .font(.system(size: 22))
+                    .accessibilityHidden(true)
 
                 Text(strings.difficultyLabel(difficulty))
                     .font(AppFont.label(size: 11))
@@ -549,36 +569,58 @@ private struct DifficultyButton: View {
             .animation(.appSnap, value: isSelected)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(strings.difficultyLabel(difficulty))
+        .accessibilityValue(isSelected ? strings.selected : strings.notSelected)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint(strings.selectDifficultyHint)
     }
 }
 
 // MARK: ─── TopicPill ─────────────────────────────────────────────────────────
 
 private struct TopicPill: View {
-    let label:      String
-    let icon:       String
+    let label: String
+    let icon: String
     let isSelected: Bool
-    let action:     () -> Void
+    let strings: AppStrings
+    let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 11, weight: .semibold))
-                Text(label).font(AppFont.body(size: 13, weight: .semibold))
+                Image(systemName: icon)
+                    .accessibilityHidden(true)
+                    .font(.system(size: 11, weight: .semibold))
+
+                Text(label)
+                    .font(AppFont.body(size: 13, weight: .semibold))
             }
             .foregroundStyle(isSelected ? .white : Color.white.opacity(0.5))
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(isSelected ? LinearGradient.brandGlow : LinearGradient(
-                colors: [Color.white.opacity(0.06)], startPoint: .leading, endPoint: .trailing
-            ))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                isSelected
+                    ? LinearGradient.brandGlow
+                    : LinearGradient(
+                        colors: [Color.white.opacity(0.06)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+            )
             .clipShape(Capsule())
-            .overlay(Capsule().strokeBorder(
-                isSelected ? Color.clear : Color.appBorder, lineWidth: 1
-            ))
+            .overlay(
+                Capsule().strokeBorder(
+                    isSelected ? Color.clear : Color.appBorder,
+                    lineWidth: 1
+                )
+            )
             .scaleEffect(isSelected ? 1.04 : 1.0)
             .animation(.appSnap, value: isSelected)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint(strings.selectTopicHint)
     }
 }
 // MARK: ─── LanguagePill ─────────────────────────────────────────────────────────
@@ -586,6 +628,7 @@ private struct TopicPill: View {
 private struct LanguagePill: View {
     let language: AppLanguage
     let isSelected: Bool
+    let strings: AppStrings
     let action: () -> Void
 
     var body: some View {
@@ -593,6 +636,7 @@ private struct LanguagePill: View {
             HStack(spacing: 6) {
                 Text(flag)
                     .font(.system(size: 16))
+                    .accessibilityHidden(true)
 
                 Text(language.displayName)
                     .font(AppFont.label(size: 10))
@@ -622,15 +666,32 @@ private struct LanguagePill: View {
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(language.displayName)
+        .accessibilityValue(accessibilityValue)
+        .accessibilityHint(strings.selectLanguageHint)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
-
+    
     private var flag: String {
         switch language {
-        case .english: "🇬🇧"
-        case .french: "🇫🇷"
-        case .arabic: "🇸🇦"
-        case .spanish: "🇪🇸"
-        case .tunisian: "🇹🇳"
+        case .english:
+            return "🇬🇧"
+        case .french:
+            return "🇫🇷"
+        case .arabic:
+            return "🇸🇦"
+        case .spanish:
+            return "🇪🇸"
+        case .tunisian:
+            return "🇹🇳"
+        }
+    }
+
+    private var accessibilityValue: String {
+        if isSelected {
+            return strings.selected
+        } else {
+            return strings.notSelected
         }
     }
 }

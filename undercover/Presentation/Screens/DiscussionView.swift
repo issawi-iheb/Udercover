@@ -93,6 +93,9 @@ public struct DiscussionView: View {
                             width: ScreenSize.circleSize(for: geo.size.width),
                             height: ScreenSize.circleSize(for: geo.size.width)
                         )
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(s.timerAccessibilityLabel(viewModel.timeRemaining))
+                        .accessibilityHint(s.timerHint)
                         // Only show the pulse when urgent.
                         if isUrgent {
                             PulsingRing(
@@ -100,6 +103,7 @@ public struct DiscussionView: View {
                                 size: 230
                             )
                             .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                         }
                     }
                     .scaleEffect(appeared ? 1 : 0.8)
@@ -174,6 +178,8 @@ public struct DiscussionView: View {
                             )
                         )
                     }
+                    .accessibilityLabel(s.startVotingNow)
+                    .accessibilityHint(s.enterVotingHint)
                     .padding(.horizontal, Space.pagePadding)
                     .padding(
                         .bottom,
@@ -190,7 +196,7 @@ public struct DiscussionView: View {
                         Haptic.medium()
                         viewModel.skipVoting()
                     } label: {
-                        Text("SKIP VOTE")
+                        Text(s.skipVote)
                             .font(AppFont.button(size: 14))
                             .tracking(
                                 viewModel.selectedLanguage.isRTL ? 0 : 2
@@ -218,6 +224,8 @@ public struct DiscussionView: View {
                                 )
                             )
                     }
+                    .accessibilityLabel(s.skipVote)
+                    .accessibilityHint(s.skipVotingHint)
                     .padding(.horizontal, Space.pagePadding)
                     .padding(.bottom, geo.safeAreaInsets.bottom + Space.md)
                     .opacity(appeared ? 1 : 0)
@@ -243,7 +251,7 @@ public struct DiscussionView: View {
 
     private var playerChips: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("PLAYERS")
+            Text(s.players)
                 .font(AppFont.label(size: 10))
                 .foregroundStyle(
                     Color.white.opacity(0.3)
@@ -269,23 +277,25 @@ public struct DiscussionView: View {
                                 isAlive: !player.isEliminated
                             )
 
-                            Text(
-                                String(
-                                    player.name.prefix(5)
+                            Text(String(player.name.prefix(5)))
+                                .font(
+                                    AppFont.body(
+                                        size: 9,
+                                        weight: .medium
+                                    )
                                 )
-                            )
-                            .font(
-                                AppFont.body(
-                                    size: 9,
-                                    weight: .medium
+                                .foregroundStyle(
+                                    player.isEliminated
+                                        ? Color.white.opacity(0.2)
+                                        : Color.white.opacity(0.55)
                                 )
-                            )
-                            .foregroundStyle(
-                                player.isEliminated
-                                ? Color.white.opacity(0.2)
-                                : Color.white.opacity(0.55)
-                            )
-                            .lineLimit(1)
+                                .lineLimit(1)
+                                .accessibilityLabel(player.name)
+                                .accessibilityValue(
+                                    player.isEliminated
+                                        ? s.eliminated
+                                        : s.active
+                                )
                         }
                     }
                 }
@@ -302,6 +312,7 @@ public struct DiscussionView: View {
             Image(systemName: "person.fill.questionmark")
                 .font(.system(size: 20))
                 .foregroundStyle(Color.brandPurple)
+                .accessibilityHidden(true)
 
             VStack(
                 alignment: .leading,

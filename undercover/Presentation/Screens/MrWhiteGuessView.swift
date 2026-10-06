@@ -16,6 +16,9 @@ public struct MrWhiteGuessView: View {
     @State private var flashTrigger = false
     
     @FocusState private var focused: Bool
+    private var s: AppStrings {
+        viewModel.selectedLanguage.strings
+    }
     
     private var canSubmit: Bool {
         !viewModel.mrWhiteGuessInput.trimmingCharacters(in: .whitespaces).isEmpty
@@ -35,9 +38,11 @@ public struct MrWhiteGuessView: View {
                 )
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
                 
                 // Screen flash on submit
                 ScreenFlash(color: .brandPink, trigger: $flashTrigger)
+                    .accessibilityHidden(true)
                 
                 if !showInput {
                     countdownView
@@ -65,16 +70,20 @@ public struct MrWhiteGuessView: View {
         VStack(spacing: Space.xl) {
             Spacer()
             
-            Text("MR. WHITE")
+            Text(s.mrWhite)
                 .font(AppFont.label(size: 14))
                 .foregroundStyle(Color.brandPink)
                 .tracking(5)
             
-            Text(viewModel.isFinalMrWhiteDuel ? "Final Guess" : "One Last Chance")
-                .font(.system(size: 26, weight: .black, design: .rounded))
+            Text(
+                viewModel.isFinalMrWhiteDuel
+                    ? s.finalGuess
+                    : s.oneLastChance
+            )
+            .font(.system(size: 26, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
             
-            Text("Guess the civilians' word to win.")
+            Text(s.guessCiviliansWord)
                 .font(.system(size: 26, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
@@ -99,6 +108,8 @@ public struct MrWhiteGuessView: View {
                     .contentTransition(.numericText(countsDown: true))
                     .animation(.appSnap, value: countdown)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(s.countdownAccessibilityLabel(countdown))
             
             Spacer()
         }
@@ -153,6 +164,7 @@ public struct MrWhiteGuessView: View {
                 
                 Text("🃏")
                     .font(.system(size: 52))
+                    .accessibilityHidden(true)
             }
             .scaleEffect(
                 appeared ? 1 : 0.5
@@ -166,12 +178,12 @@ public struct MrWhiteGuessView: View {
             )
             
             VStack(spacing: 8) {
-                Text("MR. WHITE")
+                Text(s.mrWhite)
                     .font(AppFont.label(size: 13))
                     .foregroundStyle(Color.brandPink)
                     .tracking(5)
                 
-                Text("Did Mr. White guess it?")
+                Text(s.didMrWhiteGuessIt)
                     .font(
                         .system(
                             size: 26,
@@ -182,7 +194,7 @@ public struct MrWhiteGuessView: View {
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                 
-                Text("Say the guess out loud, then confirm the result.")
+                Text(s.sayGuessThenConfirm)
                     .font(AppFont.body(size: 14))
                     .foregroundStyle(
                         Color.white.opacity(0.4)
@@ -207,7 +219,7 @@ public struct MrWhiteGuessView: View {
     
     private var liveGuessSection: some View {
         VStack(spacing: Space.md) {
-            Text("SPOKEN GUESS")
+            Text(s.spokenGuess)
                 .font(AppFont.label(size: 10))
                 .foregroundStyle(
                     Color.white.opacity(0.3)
@@ -221,7 +233,7 @@ public struct MrWhiteGuessView: View {
                     )
                 } label: {
                     Label(
-                        "GOT IT",
+                        s.gotIt,
                         systemImage: "checkmark"
                     )
                     .font(
@@ -248,6 +260,8 @@ public struct MrWhiteGuessView: View {
                         )
                     }
                 }
+                .accessibilityLabel(s.gotIt)
+                .accessibilityHint(s.selectCorrectGuessHint)
                 
                 Button {
                     resolveLiveGuess(
@@ -255,7 +269,7 @@ public struct MrWhiteGuessView: View {
                     )
                 } label: {
                     Label(
-                        "WRONG",
+                        s.wrong,
                         systemImage: "xmark"
                     )
                     .font(
@@ -282,6 +296,8 @@ public struct MrWhiteGuessView: View {
                         )
                     }
                 }
+                .accessibilityLabel(s.wrong)
+                .accessibilityHint(s.selectWrongGuessHint)
             }
         }
         .padding(.horizontal, Space.pagePadding)
@@ -306,7 +322,7 @@ public struct MrWhiteGuessView: View {
                     .fill(Color.white.opacity(0.08))
                     .frame(height: 1)
                 
-                Text("OR TYPE THE GUESS")
+                Text(s.orTypeTheGuess)
                     .font(
                         AppFont.label(size: 9)
                     )
@@ -319,11 +335,12 @@ public struct MrWhiteGuessView: View {
                 Rectangle()
                     .fill(Color.white.opacity(0.08))
                     .frame(height: 1)
+                    .accessibilityHidden(true)
             }
             
             VStack(spacing: 10) {
                 TextField(
-                    "Type the word…",
+                    s.typeTheWord,
                     text: $viewModel.mrWhiteGuessInput
                 )
                 .font(
@@ -338,6 +355,7 @@ public struct MrWhiteGuessView: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .focused($focused)
+                .accessibilityLabel(s.guessInputLabel)
                 .padding(.vertical, Space.md)
                 .submitLabel(.done)
                 .onSubmit {
@@ -353,8 +371,9 @@ public struct MrWhiteGuessView: View {
                                 ProgressView()
                                     .tint(.white)
                                     .scaleEffect(0.85)
+                                    .accessibilityHidden(true)
                                 
-                                Text("CHECKING…")
+                                Text(s.checking)
                                     .font(
                                         AppFont.button(
                                             size: 13
@@ -362,7 +381,7 @@ public struct MrWhiteGuessView: View {
                                     )
                             }
                         } else {
-                            Text("CHECK GUESS")
+                            Text(s.checkGuess)
                                 .font(
                                     AppFont.button(
                                         size: 13
@@ -400,6 +419,11 @@ public struct MrWhiteGuessView: View {
                         )
                     }
                 }
+                .accessibilityLabel(
+                    submitted
+                        ? s.checking
+                        : s.checkGuess
+                )
                 .disabled(
                     !canSubmit || submitted
                 )
